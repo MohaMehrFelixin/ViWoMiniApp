@@ -1544,3 +1544,320 @@ The original phases (Section 9) remain valid. Add these items to the existing ph
 **Phase 4 additions:**
 - [ ] Fraud Detection should flag household ownership mismatch attempts (403 on redeem)
 - [ ] Alert for `KYC_NOT_CONFIGURED` errors (Finnotech integration down)
+
+---
+
+## 13. Verified Backend Prerequisites (Code Bloodhound Audit — April 7, 2026)
+
+> Every item below was verified against the actual codebase using Glob, Grep, and Read tools. Zero assumptions. These are confirmed missing and MUST be built before the admin panel can function.
+
+### 13.1 Database Migrations Required
+
+The following tables do NOT exist in any of the 4 migration files (`backend/migrations/001-004`):
+
+#### Migration 005: `admin_users`
+
+```sql
+-- 005_admin_panel.sql
+
+CREATE TABLE admin_users (
+    id              BIGINT PRIMARY KEY,
+    national_code   VARCHAR(10) UNIQUE NOT NULL,
+    full_name       VARCHAR(200) NOT NULL,
+    phone           VARCHAR(15) NOT NULL,
+    birth_date      DATE,
+    gender          VARCHAR(10),
+    role_level      INT NOT NULL DEFAULT 1
+        CHECK (role_level >= 1 AND role_level <= 10),
+    role_title      VARCHAR(50) NOT NULL DEFAULT 'viewer',
+    province_codes  TEXT[] DEFAULT '{}',
+    parent_admin_id BIGINT REFERENCES admin_users(id),
+    status          VARCHAR(20) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'suspended', 'deactivated')),
+    last_login      TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_admin_users_role ON admin_users(role_level);
+CREATE INDEX idx_admin_users_parent ON admin_users(parent_admin_id);
+CREATE INDEX idx_admin_users_province ON admin_users USING GIN(province_codes);
+CREATE INDEX idx_admin_users_national_code ON admin_users(national_code);
+
+-- Seed super admin (CEO)
+INSERT INTO admin_users (id, national_code, full_name, phone, role_level, role_title, status)
+VALUES (1, '0000000000', 'System Admin', '09000000000', 10, 'ceo', 'active');
+```
+
+**Verified missing**: `grep -r "admin_users" backend/` → 0 matches.
+
+#### Migration 006: `audit_logs`
+
+```sql
+CREATE TABLE audit_logs (
+    id          BIGINT PRIMARY KEY,
+    admin_id    BIGINT REFERENCES admin_users(id),
+    action      VARCHAR(50) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id   BIGINT,
+    old_value   JSONB,
+    new_value   JSONB,
+    ip_address  INET,
+    user_agent  VARCHAR(500),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+CREATE INDEX idx_audit_logs_admin ON audit_logs(admin_id, created_at DESC);
+CREATE INDEX idx_audit_logs_action ON audit_logs(action, created_at DESC);
+```
+
+**Verified missing**: `grep -r "audit_logs" backend/` → 0 matches. `grep -r "audit" backend/migrations/` → 0 matches.
+
+#### Migration 007: `volunteers` and `distributors`
+
+```sql
+CREATE TABLE volunteers (
+    id              BIGINT PRIMARY KEY,
+    household_id    BIGINT REFERENCES households(id) ON DELETE CASCADE,
+    member_id       BIGINT REFERENCES household_members(id),
+    specialty       VARCHAR(100),
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'rejected', 'suspended')),
+    verified_at     TIMESTAMPTZ,
+    verified_by     BIGINT REFERENCES admin_users(id),
+    notes           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_volunteers_hh ON volunteers(household_id);
+CREATE INDEX idx_volunteers_status ON volunteers(status);
+
+CREATE TABLE distributors (
+    id              BIGINT PRIMARY KEY,
+    household_id    BIGINT REFERENCES households(id) ON DELETE CASCADE,
+    store_address   VARCHAR(500) NOT NULL,
+    store_desc      TEXT,
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'rejected', 'suspended')),
+    verified_at     TIMESTAMPTZ,
+    verified_by     BIGINT REFERENCES admin_users(id),
+    notes           TEXT,
+    lat             DOUBLE PRECISION,
+    lng             DOUBLE PRECISION,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_distributors_hh ON distributors(household_id);
+CREATE INDEX idx_distributors_status ON distributors(status);
+```
+
+**Verified missing**: `grep -r "CREATE TABLE volunteers" backend/` → 0 matches. `grep -r "CREATE TABLE distributors" backend/` → 0 matches. Currently stored in frontend `useVolunteerStore.ts` and `useDistributorStore.ts` (localStorage only — lost on device change/logout).
+
+#### Migration 008: `system_settings`
+
+```sql
+CREATE TABLE system_settings (
+    key         VARCHAR(100) PRIMARY KEY,
+    value       JSONB NOT NULL,
+    updated_by  BIGINT REFERENCES admin_users(id),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed with current hardcoded values from allocation_service.go:37-66
+INSERT INTO system_settings (key, value) VALUES
+('allocation_base_amounts', '{"infant_0_6m":{"water":30,"food":8,"fuel":0,"hygiene":10,"medical":5,"energy":0},"infant_6_23m":{"water":45,"food":12,"fuel":0,"hygiene":8,"medical":4,"energy":0},"child_2_4":{"water":60,"food":15,"fuel":0,"hygiene":6,"medical":3,"energy":0},"child_5_11":{"water":90,"food":20,"fuel":0,"hygiene":5,"medical":2,"energy":1},"teen_12_17":{"water":120,"food":25,"fuel":0,"hygiene":5,"medical":2,"energy":1},"adult_18_59":{"water":150,"food":30,"fuel":15,"hygiene":5,"medical":2,"energy":2},"senior_60_64":{"water":120,"food":25,"fuel":15,"hygiene":6,"medical":4,"energy":2},"elderly_65_plus":{"water":100,"food":20,"fuel":15,"hygiene":8,"medical":6,"energy":2}}'),
+('special_flag_multipliers', '{"pregnant":{"food":1.25,"medical":1.5},"chronic":{"medical":14.0},"sanitary":{"hygiene":6.0},"disability":{"medical":1.5},"newborn":{"food":1.3}}'),
+('location_multipliers', '{"tehran":0.8,"urban":1.0,"rural":1.2}'),
+('kyc_tier_factors', '{"1":1.0,"2":0.85,"3":0.7}'),
+('weekly_release_pcts', '[35,25,25,15]'),
+('rate_limits', '{"qr_generate":{"rps":3,"burst":5},"redeem":{"rps":1,"burst":3},"kyc_otp":{"rps":3,"burst":3},"notices":{"rps":5,"burst":10}}');
+```
+
+**Verified missing**: `grep -r "system_settings" backend/` → 0 matches. All values currently hardcoded as Go maps at `allocation_service.go:37-66`.
+
+#### Migration 009: ALTER existing tables for admin columns
+
+```sql
+-- Add admin tracking to households
+ALTER TABLE households
+    ADD COLUMN kyc_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (kyc_status IN ('pending', 'verified', 'rejected', 'expired')),
+    ADD COLUMN updated_by BIGINT,
+    ADD COLUMN suspension_reason VARCHAR(500),
+    ADD COLUMN suspended_at TIMESTAMPTZ,
+    ADD COLUMN admin_notes TEXT;
+
+-- Add dispute resolution to redemptions
+ALTER TABLE coupon_redemptions
+    ADD COLUMN dispute_reason VARCHAR(1000),
+    ADD COLUMN dispute_resolved_by BIGINT,
+    ADD COLUMN dispute_resolution VARCHAR(1000),
+    ADD COLUMN dispute_resolved_at TIMESTAMPTZ,
+    ADD COLUMN admin_notes TEXT;
+
+-- Add admin tracking to distribution centers
+ALTER TABLE distribution_centers
+    ADD COLUMN managed_by BIGINT,
+    ADD COLUMN last_modified_by BIGINT,
+    ADD COLUMN deactivated_at TIMESTAMPTZ;
+
+-- Add admin tracking to allocations
+ALTER TABLE coupon_allocations
+    ADD COLUMN updated_by BIGINT,
+    ADD COLUMN is_paused BOOLEAN DEFAULT FALSE,
+    ADD COLUMN pause_reason VARCHAR(500);
+
+-- Add admin tracking to power bank swaps
+ALTER TABLE power_bank_swaps
+    ADD COLUMN admin_notes TEXT,
+    ADD COLUMN forced_by BIGINT;
+```
+
+**Verified missing**: `grep -r "updated_by\|admin_notes\|kyc_status\|suspension_reason\|dispute_resolved" backend/migrations/` → 0 matches across all 4 migration files.
+
+### 13.2 Backend Code Required
+
+#### New packages to create (none of these directories exist)
+
+```
+backend/internal/admin/                    # DOES NOT EXIST (verified: glob returned 0)
+  ├── handler/
+  │   ├── admin_handler.go                 # HTTP handlers for all admin CRUD
+  │   └── routes.go                        # Mount under /api/v1/admin/*
+  ├── service/
+  │   ├── admin_service.go                 # Admin user management + RBAC
+  │   ├── audit_service.go                 # Audit trail logging
+  │   ├── export_service.go                # CSV/Excel exports
+  │   └── stats_service.go                 # Dashboard statistics
+  ├── repository/
+  │   ├── admin_repo.go                    # Admin user queries
+  │   └── audit_repo.go                    # Audit log persistence
+  ├── middleware/
+  │   ├── session_auth.go                  # OTP + Redis session auth
+  │   └── rbac.go                          # Role-based access control (10-level)
+  └── model/
+      ├── admin.go                         # Admin user model
+      ├── audit.go                         # Audit log model
+      └── roles.go                         # Role definitions + permission matrix
+```
+
+#### Missing methods on EXISTING repositories
+
+**`distribution_repo.go`** — currently has ONLY `GetByID` and `GetNearby` (verified: 2 methods total):
+```go
+// MUST ADD:
+Create(ctx context.Context, center *model.DistributionCenter) error
+Update(ctx context.Context, center *model.DistributionCenter) error
+UpdateStock(ctx context.Context, id int64, stockStatus map[string]string) error
+UpdateStatus(ctx context.Context, id int64, status string) error
+Delete(ctx context.Context, id int64) error
+GetAll(ctx context.Context, filters AdminFilters) ([]model.DistributionCenter, int, error)
+GetByProvince(ctx context.Context, provinceCode string) ([]model.DistributionCenter, error)
+```
+
+**`household_repo.go`** — currently has Create, GetByID, GetByTelegramUserID, AddMember, GetMembers, GetMemberByNationalCode, UpdateKYCTier, UpdateMember, SetMemberKYCVerified (verified: 9 methods):
+```go
+// MUST ADD:
+UpdateStatus(ctx context.Context, id int64, status string, reason string) error
+UpdateAddress(ctx context.Context, id int64, address string, lat, lng float64) error
+Search(ctx context.Context, query string, filters AdminFilters) ([]model.Household, int, error)
+GetPaginated(ctx context.Context, filters AdminFilters) ([]model.Household, int, error)
+DeleteMember(ctx context.Context, memberID int64) error
+BulkUpdateStatus(ctx context.Context, ids []int64, status string) error
+```
+
+**`allocation_repo.go`** — currently has CreateBatch, DeleteByHouseholdCycle, GetByHouseholdAndCategory, DeductBalance, GetCurrentCycleAllocations (verified: 5 methods):
+```go
+// MUST ADD:
+AdjustAmount(ctx context.Context, id int64, newAmount string, reason string, adminID int64) error
+GetPaginated(ctx context.Context, filters AdminFilters) ([]model.CouponAllocation, int, error)
+UpdateStatus(ctx context.Context, id int64, status string) error
+ReverseDeduction(ctx context.Context, allocationID int64, amount string) error
+PauseAllocation(ctx context.Context, id int64, reason string) error
+```
+
+**`redemption_repo.go`** — currently has Create, GetByID, GetByHousehold, GetByHouseholdAndCategory, GetByNonce, UpdateStatus (verified: 6 methods):
+```go
+// MUST ADD:
+GetPaginated(ctx context.Context, filters AdminFilters) ([]model.CouponRedemption, int, error)
+GetByCenter(ctx context.Context, centerID int64) ([]model.CouponRedemption, error)
+GetByStatus(ctx context.Context, status string) ([]model.CouponRedemption, error)
+ResolveDispute(ctx context.Context, id int64, resolution string, adminID int64, accepted bool) error
+ReverseRedemption(ctx context.Context, id int64, adminID int64) error
+AddAdminNotes(ctx context.Context, id int64, notes string) error
+```
+
+#### Missing service methods
+
+**Dispute resolution** — verified: `DisputeRedemption` at `redemption_service.go:160-172` only sets `status='disputed'`. The `reversed` status exists in DB constraint (`001_create_coupon_system.sql:90`) but zero Go code ever sets it:
+```go
+// MUST ADD to RedemptionService:
+ResolveDispute(ctx context.Context, redemptionID int64, accepted bool, resolution string, adminID int64) error
+// If accepted: set status='reversed', credit amount back to allocation via DB transaction
+// If rejected: set status='completed', record rejection reason
+
+ReverseRedemption(ctx context.Context, redemptionID int64, adminID int64) error
+// Admin-initiated reversal: set status='reversed', credit allocation
+```
+
+**Allocation engine config** — verified: all constants hardcoded at `allocation_service.go:37-66`, zero database reads:
+```go
+// MUST CHANGE in AllocationService:
+// Replace hardcoded maps with config loaded from system_settings table
+// Add method: ReloadConfig(ctx) error — reads from DB, caches in memory
+// Admin API calls ReloadConfig after updating system_settings
+```
+
+### 13.3 Frontend Changes Required
+
+#### Volunteer/Distributor Backend Sync
+
+Currently stored in localStorage only (verified: `useVolunteerStore.ts` and `useDistributorStore.ts` use `zustand/persist` with no API calls):
+
+```
+// MUST ADD to frontend/src/api/coupon.ts:
+POST /volunteer/register    → registerVolunteer(data)
+GET  /volunteer/status      → getVolunteerStatus()
+POST /distributor/register  → registerDistributor(data)
+GET  /distributor/status    → getDistributorStatus()
+
+// MUST ADD to backend:
+// New handler methods + routes for volunteer/distributor registration
+// These write to the new volunteers/distributors DB tables
+// KYC flow calls these instead of localStorage
+```
+
+#### KYC Status Backend Check
+
+Currently `useKycStore.completed` is localStorage only (verified: `useKycStore.ts:49-55` sets `completed: true` in local state):
+
+```
+// Frontend must check backend kyc_status on load:
+// KycFlow.tsx already calls getHousehold() on mount — this is correct
+// BUT: admin must be able to set kyc_status='rejected' to force re-verification
+// Frontend must respect backend kyc_status, not just localStorage
+```
+
+### 13.4 Complete Prerequisites Checklist
+
+| # | Prerequisite | Type | Blocking Admin Pages | Effort |
+|---|-------------|------|---------------------|--------|
+| 1 | Migration: `admin_users` table | DB | Login, Users, all pages (auth) | Small |
+| 2 | Migration: `audit_logs` table | DB | Audit Trail | Small |
+| 3 | Migration: `volunteers` table | DB | Volunteers page | Small |
+| 4 | Migration: `distributors` table | DB | Distributors page | Small |
+| 5 | Migration: `system_settings` table | DB | Settings page | Small |
+| 6 | Migration: ALTER tables (kyc_status, updated_by, admin_notes, dispute columns) | DB | Household detail, Redemption detail | Small |
+| 7 | Admin session auth middleware (OTP + Redis session) | Backend | ALL admin pages | Medium |
+| 8 | RBAC middleware (10-level hierarchy check) | Backend | ALL admin pages | Medium |
+| 9 | Distribution center CRUD repo methods (7 methods) | Backend | Centers page | Medium |
+| 10 | Household admin repo methods (6 methods) | Backend | Households page | Medium |
+| 11 | Allocation admin repo methods (5 methods) | Backend | Allocations page | Medium |
+| 12 | Redemption admin repo methods (6 methods) | Backend | Redemptions page | Medium |
+| 13 | Dispute resolve + reverse service logic | Backend | Redemptions page | Medium |
+| 14 | Allocation config from DB instead of hardcoded | Backend | Settings page | Large |
+| 15 | Volunteer/Distributor API endpoints | Backend + Frontend | Volunteers, Distributors pages | Medium |
+| 16 | Admin API route registration (`/api/v1/admin/*`) | Backend | ALL admin pages | Small |
+| 17 | Audit trail service (log every admin write) | Backend | Audit Trail page | Medium |
+| 18 | Admin frontend SPA scaffolding | Frontend | ALL admin pages | Medium |
+
+**Total: 18 prerequisites, 0 currently implemented.**

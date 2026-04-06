@@ -86,13 +86,30 @@ export function HomePage() {
           </span>
           </div>
         </div>
-        <button
-          onClick={toggleLang}
-          className="glass-btn glass-btn-sm"
-          aria-label={i18n.language === "fa" ? "تغییر زبان" : "Toggle language"}
-        >
-          {i18n.language === "fa" ? "EN" : "\u0641\u0627"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const url = "https://t.me/ViWoMiniBot/viwoapp";
+              const text = i18n.language === "fa"
+                ? "سامانه کوپن دیجیتال ویوو — توزیع عادلانه کالاهای ضروری"
+                : "ViWo Digital Coupon — Fair distribution of essential supplies";
+              window.Telegram?.WebApp?.openTelegramLink?.(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`);
+            }}
+            className="glass-btn glass-btn-sm"
+            aria-label="Share"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" />
+            </svg>
+          </button>
+          <button
+            onClick={toggleLang}
+            className="glass-btn glass-btn-sm"
+            aria-label={i18n.language === "fa" ? "تغییر زبان" : "Toggle language"}
+          >
+            {i18n.language === "fa" ? "EN" : "\u0641\u0627"}
+          </button>
+        </div>
       </div>
 
       <div className="glass-stagger grid grid-cols-2 gap-3">

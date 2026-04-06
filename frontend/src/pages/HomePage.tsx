@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { useHouseholdStore } from "../store/useHouseholdStore";
 import { useBalanceStore } from "../store/useBalanceStore";
 import { CategoryCard } from "../components/CategoryCard";
@@ -9,10 +10,13 @@ import { EmptyState } from "../components/EmptyState";
 import { IconEmpty } from "../components/Icons";
 import { NoticeBanner } from "../components/NoticeBanner";
 import { getWeekNumber } from "../lib/utils";
+import { promptAddToHomeScreen, showSettingsButton, hideSettingsButton, getTelegramUser } from "../lib/telegram";
 
 export function HomePage() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const { household, fetchHousehold, loading: hhLoading } = useHouseholdStore();
+  const tgUser = getTelegramUser();
   const {
     balances,
     loading: balLoading,
@@ -23,6 +27,7 @@ export function HomePage() {
 
   useEffect(() => {
     fetchHousehold();
+    promptAddToHomeScreen();
   }, [fetchHousehold]);
 
   useEffect(() => {
@@ -30,6 +35,12 @@ export function HomePage() {
       fetchBalances();
     }
   }, [household, fetchBalances]);
+
+  // Show Telegram Settings button → navigates to Profile
+  useEffect(() => {
+    showSettingsButton(() => navigate("/profile"));
+    return () => hideSettingsButton();
+  }, [navigate]);
 
   const loading = hhLoading || balLoading;
 
@@ -58,7 +69,9 @@ export function HomePage() {
         <div className="flex items-center gap-3">
           <img src="/logo.jpg" alt="ViWo" className="h-10 w-10 rounded-xl" />
           <div>
-          <h1 className="text-primary text-lg font-bold">{t("home.title")}</h1>
+          <h1 className="text-primary text-lg font-bold">
+            {tgUser?.firstName ? `${tgUser.firstName}, ` : ""}{t("home.title")}
+          </h1>
           <span className="text-tertiary text-xs">
             {t("home.week", { n: getWeekNumber() })}
             {lastFetched && (

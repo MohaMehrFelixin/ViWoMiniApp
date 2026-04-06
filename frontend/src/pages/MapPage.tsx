@@ -5,6 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { DistributionCenter } from "../lib/types";
 import { getNearbyCenters } from "../api/coupon";
+import { getLocation } from "../lib/telegram";
 import { Loading } from "../components/Loading";
 import { ErrorState } from "../components/ErrorState";
 
@@ -88,31 +89,26 @@ export function MapPage() {
     return () => observer.disconnect();
   }, []);
 
-  const loadCenters = () => {
+  const loadCenters = async () => {
     setError(null);
     setLoading(true);
-    const load = async (lat: number, lng: number, isUser: boolean) => {
-      try {
-        if (isUser) setUserPos(L.latLng(lat, lng));
-        const res = await getNearbyCenters(lat, lng);
-        if (res.centers.length > 0) {
-          setCenters(res.centers);
-        } else {
-          const fb = await getNearbyCenters(TEHRAN.lat, TEHRAN.lng);
-          setCenters(fb.centers);
-        }
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Failed");
-      } finally {
-        setLoading(false);
+    try {
+      const loc = await getLocation();
+      const lat = loc?.lat ?? TEHRAN.lat;
+      const lng = loc?.lng ?? TEHRAN.lng;
+      if (loc) setUserPos(L.latLng(lat, lng));
+      const res = await getNearbyCenters(lat, lng);
+      if (res.centers.length > 0) {
+        setCenters(res.centers);
+      } else {
+        const fb = await getNearbyCenters(TEHRAN.lat, TEHRAN.lng);
+        setCenters(fb.centers);
       }
-    };
-    if (!navigator.geolocation) { load(TEHRAN.lat, TEHRAN.lng, false); return; }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => load(pos.coords.latitude, pos.coords.longitude, true),
-      () => load(TEHRAN.lat, TEHRAN.lng, false),
-      { enableHighAccuracy: false, timeout: 5000 }
-    );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps

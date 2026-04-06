@@ -7,6 +7,7 @@ import { CATEGORY_MAP } from "../lib/constants";
 import { CATEGORY_ICONS } from "../components/Icons";
 import { formatAmount } from "../lib/utils";
 import { CountdownTimer } from "../components/CountdownTimer";
+import { lockPortrait, unlockOrientation } from "../lib/telegram";
 
 interface QRLocationState {
   qrData: GenerateQRResponse;
@@ -25,9 +26,11 @@ export function QRDisplayPage() {
     back?.show();
     const handler = () => navigate(-1);
     back?.onClick(handler);
+    lockPortrait(); // Prevent rotation while QR is displayed
     return () => {
       back?.offClick(handler);
       back?.hide();
+      unlockOrientation();
     };
   }, [navigate]);
 

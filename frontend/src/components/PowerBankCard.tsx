@@ -9,6 +9,7 @@ import {
   cancelPowerBankSwap,
   getNearbyCenters,
 } from "../api/coupon";
+import { getLocation as tgGetLocation } from "../lib/telegram";
 import { useHouseholdStore } from "../store/useHouseholdStore";
 import { IconEnergy } from "./Icons";
 
@@ -56,14 +57,11 @@ export function PowerBankCard() {
     setActing(true);
     setError(null);
     try {
-      // Find nearest energy distribution center via geolocation
+      // Find nearest energy distribution center via Telegram LocationManager
       let centerID: number | null = null;
-      const pos = await new Promise<GeolocationPosition | null>((resolve) => {
-        if (!navigator.geolocation) { resolve(null); return; }
-        navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), { timeout: 5000 });
-      });
-      const lat = pos?.coords.latitude ?? 35.6892;
-      const lng = pos?.coords.longitude ?? 51.389;
+      const loc = await tgGetLocation();
+      const lat = loc?.lat ?? 35.6892;
+      const lng = loc?.lng ?? 51.389;
       const nearby = await getNearbyCenters(lat, lng, "energy");
       if (nearby.centers.length > 0) {
         centerID = nearby.centers[0]?.id ?? null;

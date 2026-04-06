@@ -110,35 +110,172 @@ export const api = ky.create({
   },
 });
 
+interface TgButton {
+  text: string;
+  color: string;
+  textColor: string;
+  isVisible: boolean;
+  isActive: boolean;
+  hasShineEffect: boolean;
+  show: () => void;
+  hide: () => void;
+  enable: () => void;
+  disable: () => void;
+  setText: (text: string) => void;
+  onClick: (cb: () => void) => void;
+  offClick: (cb: () => void) => void;
+  showProgress: (leaveActive: boolean) => void;
+  hideProgress: () => void;
+  setParams: (params: Record<string, unknown>) => void;
+}
+
+interface TgSmallButton {
+  isVisible: boolean;
+  show: () => void;
+  hide: () => void;
+  onClick: (cb: () => void) => void;
+  offClick: (cb: () => void) => void;
+}
+
+interface TgBiometricManager {
+  isInited: boolean;
+  isBiometricAvailable: boolean;
+  biometricType: string;
+  isAccessRequested: boolean;
+  isAccessGranted: boolean;
+  isBiometricTokenSaved: boolean;
+  deviceId: string;
+  init: (cb?: () => void) => void;
+  requestAccess: (params: { reason: string }, cb?: (ok: boolean) => void) => void;
+  authenticate: (params: { reason: string }, cb?: (ok: boolean, token?: string) => void) => void;
+  updateBiometricToken: (token: string, cb?: (ok: boolean) => void) => void;
+  openSettings: () => void;
+}
+
+interface TgLocationManager {
+  isInited: boolean;
+  isLocationAvailable: boolean;
+  isAccessRequested: boolean;
+  isAccessGranted: boolean;
+  init: (cb?: () => void) => void;
+  getLocation: (cb: (loc: { latitude: number; longitude: number; altitude?: number; course?: number; speed?: number; horizontal_accuracy?: number; vertical_accuracy?: number; accuracy?: number } | null) => void) => void;
+  openSettings: () => void;
+}
+
+interface TgCloudStorage {
+  setItem: (key: string, value: string, cb?: (err: string | null) => void) => void;
+  getItem: (key: string, cb: (err: string | null, val?: string) => void) => void;
+  getItems: (keys: string[], cb: (err: string | null, vals?: Record<string, string>) => void) => void;
+  removeItem: (key: string, cb?: (err: string | null) => void) => void;
+  removeItems: (keys: string[], cb?: (err: string | null) => void) => void;
+  getKeys: (cb: (err: string | null, keys?: string[]) => void) => void;
+}
+
 declare global {
   interface Window {
     Telegram?: {
       WebApp?: {
+        // Core
         initData: string;
         initDataUnsafe: Record<string, unknown>;
+        version: string;
+        platform: string;
+        isExpanded: boolean;
+        isActive: boolean;
+        isFullscreen: boolean;
+        isOrientationLocked: boolean;
+        isClosingConfirmationEnabled: boolean;
+        isVerticalSwipesEnabled: boolean;
+        viewportHeight: number;
+        viewportStableHeight: number;
+        safeAreaInset: { top: number; bottom: number; left: number; right: number };
+        contentSafeAreaInset: { top: number; bottom: number; left: number; right: number };
+        headerColor: string;
+        backgroundColor: string;
+        bottomBarColor: string;
+        colorScheme: "light" | "dark";
+        themeParams: Record<string, string>;
+
+        // Lifecycle
         ready: () => void;
         expand: () => void;
         close: () => void;
-        MainButton: {
-          text: string;
-          show: () => void;
-          hide: () => void;
-          onClick: (cb: () => void) => void;
-          offClick: (cb: () => void) => void;
-        };
-        BackButton: {
-          show: () => void;
-          hide: () => void;
-          onClick: (cb: () => void) => void;
-          offClick: (cb: () => void) => void;
-        };
+        isVersionAtLeast: (version: string) => boolean;
+
+        // Buttons
+        MainButton: TgButton;
+        SecondaryButton: TgButton;
+        BackButton: TgSmallButton;
+        SettingsButton: TgSmallButton;
+
+        // Haptic
         HapticFeedback: {
           impactOccurred: (style: string) => void;
           notificationOccurred: (type: string) => void;
           selectionChanged: () => void;
         };
-        themeParams: Record<string, string>;
-        colorScheme: "light" | "dark";
+
+        // Popups
+        showPopup: (params: { title?: string; message: string; buttons?: Array<{ id?: string; type?: string; text?: string }> }, cb?: (id: string) => void) => void;
+        showAlert: (message: string, cb?: () => void) => void;
+        showConfirm: (message: string, cb?: (ok: boolean) => void) => void;
+        showScanQrPopup: (params: { text?: string }, cb?: (data: string) => boolean | void) => void;
+        closeScanQrPopup: () => void;
+
+        // Theme
+        setHeaderColor: (color: string) => void;
+        setBackgroundColor: (color: string) => void;
+        setBottomBarColor: (color: string) => void;
+
+        // Storage
+        CloudStorage: TgCloudStorage;
+
+        // Biometrics & Location
+        BiometricManager: TgBiometricManager;
+        LocationManager: TgLocationManager;
+
+        // User permissions
+        requestContact: (cb: (ok: boolean, event?: { responseUnsafe?: { contact?: { phone_number?: string; first_name?: string; last_name?: string } } }) => void) => void;
+        requestWriteAccess: (cb: (ok: boolean) => void) => void;
+
+        // Links
+        openLink: (url: string, options?: { try_instant_view?: boolean }) => void;
+        openTelegramLink: (url: string) => void;
+        openInvoice: (url: string, cb?: (status: string) => void) => void;
+
+        // Data
+        sendData: (data: string) => void;
+        switchInlineQuery: (query: string, chatTypes?: string[]) => void;
+        readTextFromClipboard: (cb: (text: string | null) => void) => void;
+
+        // Fullscreen & Orientation
+        requestFullscreen: () => void;
+        exitFullscreen: () => void;
+        lockOrientation: () => void;
+        unlockOrientation: () => void;
+
+        // Home Screen
+        addToHomeScreen: () => void;
+        checkHomeScreenStatus: (cb: (status: string) => void) => void;
+
+        // Closing & Swipes
+        enableClosingConfirmation: () => void;
+        disableClosingConfirmation: () => void;
+        enableVerticalSwipes: () => void;
+        disableVerticalSwipes: () => void;
+
+        // Sharing & Files
+        shareToStory: (mediaUrl: string, params?: { text?: string; widget_link?: { url: string; name?: string } }) => void;
+        downloadFile: (params: { url: string; file_name: string }, cb?: () => void) => void;
+        shareMessage: (msgId: string, cb?: (ok: boolean) => void) => void;
+
+        // Emoji Status
+        requestEmojiStatusAccess: (cb: (ok: boolean) => void) => void;
+        setEmojiStatus: (customEmojiId: string, params?: { duration?: number }, cb?: (ok: boolean) => void) => void;
+
+        // Events
+        onEvent: (event: string, cb: (...args: unknown[]) => void) => void;
+        offEvent: (event: string, cb: (...args: unknown[]) => void) => void;
       };
     };
   }

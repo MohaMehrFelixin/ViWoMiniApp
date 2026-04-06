@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Html5Qrcode } from "html5-qrcode";
 import { useBalanceStore } from "../store/useBalanceStore";
 import { generateQR, redeemCoupon } from "../api/coupon";
 import { extractErrorMessage } from "../lib/api-error";
+import { scanQR, canUse } from "../lib/telegram";
 import { IconCheck, IconWarning, CATEGORY_ICONS } from "../components/Icons";
 import { CATEGORIES } from "../lib/constants";
 import { formatAmount } from "../lib/utils";
@@ -55,10 +55,8 @@ export function ScannerPage() {
   const [txCode, setTxCode] = useState("");
   const [txTime, setTxTime] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const scannerRef = useRef<Html5Qrcode | null>(null);
   const confirmingRef = useRef(false);
   const cachedQRRef = useRef<{ qrData: string; category: CouponCategory; amount: string } | null>(null);
-  const scannerContainerId = "qr-reader";
 
   const { balances, fetchBalances } = useBalanceStore();
 
@@ -82,21 +80,7 @@ export function ScannerPage() {
     return { hasBalance, available: balance.available_now };
   };
 
-  const stopScanner = useCallback(async () => {
-    if (scannerRef.current) {
-      try {
-        const state = scannerRef.current.getState();
-        if (state === 2 /* SCANNING */) {
-          await scannerRef.current.stop();
-        }
-      } catch {
-        // already stopped
-      }
-      scannerRef.current = null;
-    }
-  }, []);
-
-  const onScanSuccess = useCallback((decodedText: string) => {
+  const processQRText = useCallback((decodedText: string) => {
     if (decodedText.length > MAX_QR_LENGTH) {
       setErrorMsg(t("scanner.invalidQR"));
       setStep("error");
@@ -109,7 +93,6 @@ export function ScannerPage() {
         setStep("error");
         return;
       }
-      // Validate amount is positive
       const amount = Number(parsed.amount);
       if (!Number.isFinite(amount) || amount <= 0) {
         setErrorMsg(t("scanner.invalidQR"));
@@ -117,7 +100,6 @@ export function ScannerPage() {
         return;
       }
       setQrData(parsed);
-      // Refresh balances before showing review
       fetchBalances();
       setStep("review");
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
@@ -127,38 +109,24 @@ export function ScannerPage() {
     }
   }, [t, fetchBalances]);
 
-  // Start camera scanner
+  // Launch native Telegram QR scanner
   useEffect(() => {
     if (step !== "scanning") return;
 
-    let cancelled = false;
-    const scanner = new Html5Qrcode(scannerContainerId);
-    scannerRef.current = scanner;
-
-    scanner
-      .start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-          if (!cancelled) {
-            scanner.stop().catch(() => {});
-            onScanSuccess(decodedText);
-          }
-        },
-        () => {} // ignore scan errors (no QR found yet)
-      )
-      .catch(() => {
-        if (!cancelled) {
-          setErrorMsg(t("scanner.cameraError"));
-          setStep("error");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      stopScanner();
+    const startScan = async () => {
+      const result = await scanQR(t("scanner.instruction"));
+      if (result) {
+        processQRText(result);
+      } else if (!canUse("6.4")) {
+        // Very old Telegram — show manual entry hint
+        setErrorMsg(t("scanner.cameraError"));
+        setStep("error");
+      }
+      // If result is null and canUse("6.4"), user dismissed the scanner — stay on scanning step
     };
-  }, [step, onScanSuccess, stopScanner, t]);
+
+    startScan();
+  }, [step, processQRText, t]);
 
   const handleConfirm = async () => {
     if (!qrData || confirmingRef.current) return;
@@ -232,24 +200,17 @@ export function ScannerPage() {
   const catMeta = qrData ? CATEGORIES.find((c) => c.key === qrData.category) : null;
   const CatIcon = qrData ? CATEGORY_ICONS[qrData.category] : null;
 
-  // ---- SCANNING ----
+  // ---- SCANNING (native Telegram QR scanner is open) ----
   if (step === "scanning") {
     return (
       <div className="flex flex-col items-center justify-center p-6" style={{ minHeight: "calc(100vh - 100px)" }}>
-        <h1 className="text-primary mb-2 text-xl font-bold">{t("scanner.title")}</h1>
-        <p className="text-secondary mb-6 text-center text-sm">{t("scanner.instruction")}</p>
-
-        <div className="glass glass-prominent overflow-hidden rounded-3xl p-1">
-          <div
-            id={scannerContainerId}
-            className="relative overflow-hidden rounded-[22px]"
-            style={{ width: 288, height: 288, background: "#0a0a0a" }}
-          />
+        <div className="glass glass-prominent flex flex-col items-center gap-5 p-8 text-center">
+          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-white/10" style={{ borderTopColor: "var(--accent)" }} />
+          <div>
+            <h1 className="text-primary text-lg font-semibold">{t("scanner.title")}</h1>
+            <p className="text-secondary mt-1 text-sm">{t("scanner.pointCamera")}</p>
+          </div>
         </div>
-
-        <p className="text-tertiary mt-4 text-xs">
-          {t("scanner.pointCamera")}
-        </p>
       </div>
     );
   }

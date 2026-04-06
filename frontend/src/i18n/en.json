@@ -34,7 +34,9 @@
     "shahkarFailed": "Phone number is not registered to this national code",
     "nidFailed": "Identity could not be verified",
     "sendingOtp": "Sending code...",
-    "attemptsRemaining": "attempts remaining"
+    "attemptsRemaining": "attempts remaining",
+    "useTelegramPhone": "Use Telegram Phone",
+    "nationalCodeMismatch": "National code does not match this account"
   },
   "nav": {
     "home": "Home",

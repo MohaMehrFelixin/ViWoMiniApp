@@ -9,6 +9,7 @@ import { extractErrorMessage } from "../lib/api-error";
 import type { Household } from "../lib/types";
 import { IconIdCard, IconUser, IconHouse, IconCheck, IconShield } from "../components/Icons";
 import { ShamsiDatePicker } from "../components/ShamsiDatePicker";
+import { getContact, getTelegramUser, disableClosingConfirmation } from "../lib/telegram";
 
 const TOTAL_STEPS = 8;
 const ACTIVE_DOT_STEPS = 7; // Steps 1-7 shown as dots (step 0 Welcome has no dots)
@@ -224,6 +225,23 @@ function StepPhone({
         dir="ltr"
         aria-label={t("kyc.phoneTitle")}
       />
+
+      {!value && (
+        <button
+          className="glass-btn glass-btn-sm"
+          onClick={async () => {
+            const contact = await getContact();
+            if (contact?.phone) {
+              let phone = contact.phone.replace(/\D/g, "");
+              if (phone.startsWith("98")) phone = "0" + phone.slice(2);
+              if (phone.startsWith("+98")) phone = "0" + phone.slice(3);
+              handleChange(phone);
+            }
+          }}
+        >
+          {t("kyc.useTelegramPhone") || "Use Telegram Phone"}
+        </button>
+      )}
 
       {value.length > 0 && value.length < 11 && (
         <p className="text-tertiary text-center text-xs">{value.length}/11</p>
@@ -951,8 +969,9 @@ export function KycFlow() {
   const [checking, setChecking] = useState(true);
   const [flowError, setFlowError] = useState<string | null>(null);
 
+  const tgUser = getTelegramUser();
   const nationalCode = draft.nationalCode ?? "";
-  const fullName = draft.fullName ?? "";
+  const fullName = draft.fullName ?? (tgUser ? `${tgUser.firstName} ${tgUser.lastName}`.trim() : "");
   const birthDate = draft.birthDate ?? "";
   const gender = draft.gender ?? "";
   const address = draft.address ?? "";
@@ -1051,6 +1070,7 @@ export function KycFlow() {
   };
 
   const handleEnterApp = () => {
+    disableClosingConfirmation();
     completeKyc({
       nationalCode,
       mobile,

@@ -3,11 +3,11 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import "./i18n";
 import App from "./app/App";
+import { applyThemeParams, disableVerticalSwipes, enableClosingConfirmation } from "./lib/telegram";
 
 // --- Dark/Light Mode Detection ---
 function detectAndApplyTheme() {
   const tg = window.Telegram?.WebApp;
-  // Only trust Telegram's colorScheme if actually inside Telegram (has initData)
   const insideTelegram = Boolean(tg?.initData);
 
   const isDark = insideTelegram
@@ -16,7 +16,6 @@ function detectAndApplyTheme() {
 
   document.documentElement.classList.toggle("dark", Boolean(isDark));
 
-  // Listen for system changes when outside Telegram
   if (!insideTelegram) {
     window
       .matchMedia("(prefers-color-scheme: dark)")
@@ -30,6 +29,39 @@ function detectAndApplyTheme() {
 const tg = window.Telegram?.WebApp;
 tg?.ready();
 tg?.expand();
+
+// Apply Telegram theme colors as CSS variables
+applyThemeParams();
+
+// Prevent accidental close during important flows
+enableClosingConfirmation();
+
+// Prevent swipe-down to minimize while using the app
+disableVerticalSwipes();
+
+// Listen for theme changes while app is open
+tg?.onEvent?.("themeChanged", () => {
+  detectAndApplyTheme();
+  applyThemeParams();
+});
+
+// Listen for viewport changes (keyboard open/close)
+tg?.onEvent?.("viewportChanged", () => {
+  document.documentElement.style.setProperty(
+    "--tg-viewport-height",
+    `${tg.viewportHeight}px`
+  );
+  document.documentElement.style.setProperty(
+    "--tg-viewport-stable-height",
+    `${tg.viewportStableHeight}px`
+  );
+});
+
+// Set initial viewport height
+if (tg?.viewportHeight) {
+  document.documentElement.style.setProperty("--tg-viewport-height", `${tg.viewportHeight}px`);
+  document.documentElement.style.setProperty("--tg-viewport-stable-height", `${tg.viewportStableHeight}px`);
+}
 
 detectAndApplyTheme();
 

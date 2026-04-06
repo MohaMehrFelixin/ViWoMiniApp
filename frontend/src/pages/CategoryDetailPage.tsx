@@ -49,7 +49,7 @@ export function CategoryDetailPage() {
 
   if (!meta) return <ErrorState message="Invalid category" />;
   if (loading) return <Loading />;
-  if (error) return <ErrorState message={error} onRetry={() => { setError(null); setLoading(true); getCategoryBalance(category!).then(setBalance).catch((e) => setError(e instanceof Error ? e.message : "Error")).finally(() => setLoading(false)); }} />;
+  if (error) return <ErrorState message={error} onRetry={() => { setError(null); setLoading(true); getCategoryBalance(category as CouponCategory).then(setBalance).catch((e) => setError(e instanceof Error ? e.message : "Error")).finally(() => setLoading(false)); }} />;
   if (!balance) return <ErrorState message="No allocation found" />;
 
   const percent = calcUsagePercent(balance.used_amount, balance.total_amount);

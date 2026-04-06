@@ -92,7 +92,7 @@ function ItemRow({ item, isFa }: { item: FoodItem; isFa: boolean }) {
 }
 
 export function FoodBasket() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isFa = i18n.language === "fa";
   const { household } = useHouseholdStore();
   const [showAll, setShowAll] = useState(false);
@@ -107,13 +107,13 @@ export function FoodBasket() {
       <div className="glass glass-animate p-4" style={{ animationDelay: "200ms" }}>
         <div className="mb-1 flex items-center justify-between">
           <h2 className="text-primary font-semibold">
-            {isFa ? "سبد غذایی پایه" : "Essential Food Basket"}
+            {t("food.essentialBasket")}
           </h2>
           <span
             className="rounded-full px-2.5 py-1 text-[10px] font-medium"
             style={{ background: "rgba(34,197,94,0.15)", color: "rgb(34,197,94)" }}
           >
-            {isFa ? "ماهانه" : "Monthly"}
+            {t("food.monthly")}
           </span>
         </div>
         <p className="text-tertiary mb-2 text-xs">
@@ -133,8 +133,8 @@ export function FoodBasket() {
             onClick={() => setShowAll(!showAll)}
           >
             {showAll
-              ? (isFa ? "نمایش کمتر" : "Show less")
-              : (isFa ? `نمایش همه (${ESSENTIAL_ITEMS.length})` : `Show all (${ESSENTIAL_ITEMS.length})`)}
+              ? t("food.showLess")
+              : `${t("food.showAll")} (${ESSENTIAL_ITEMS.length})`}
           </button>
         )}
       </div>
@@ -143,7 +143,7 @@ export function FoodBasket() {
       <div className="glass glass-animate p-4" style={{ animationDelay: "250ms" }}>
         <div className="mb-1 flex items-center justify-between">
           <h2 className="text-primary font-semibold">
-            {isFa ? "اقلام منطقه‌ای" : "Regional Items"}
+            {t("food.regionalItems")}
           </h2>
           <span
             className="rounded-full px-2.5 py-1 text-[10px] font-medium"
@@ -160,7 +160,7 @@ export function FoodBasket() {
             : "Items for your region — managed by regional crisis admin"}
         </p>
         <div className="divide-y" style={{ borderColor: "var(--separator)" }}>
-          {regionalItems.map((item) => (
+          {regionalItems?.map((item) => (
             <ItemRow key={item.id} item={item} isFa={isFa} />
           ))}
         </div>

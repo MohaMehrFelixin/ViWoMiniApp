@@ -31,7 +31,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {TABS.map((tab) => {
             const isActive =
               tab.path === "/"
-                ? location.pathname === "/"
+                ? location.pathname === "/" || location.pathname.startsWith("/category")
                 : location.pathname.startsWith(tab.path);
             return (
               <button

@@ -948,6 +948,7 @@ function StepSuccess({
 
 // --- Main KYC Flow ---
 export function KycFlow() {
+  const { t } = useTranslation();
   const { currentStep, draft, setStep, updateDraft, completeKyc } = useKycStore();
   const [registeredHousehold, setRegisteredHousehold] = useState<Household | null>(null);
   const [checking, setChecking] = useState(true);

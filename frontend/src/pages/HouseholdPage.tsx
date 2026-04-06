@@ -168,7 +168,7 @@ export function HouseholdTab() {
                     }`}
                     style={
                       mFlags.includes(f)
-                        ? { background: "rgba(168, 85, 247, 0.5)", borderColor: "rgba(168, 85, 247, 0.4)" }
+                        ? { background: "rgba(59, 130, 246, 0.3)", borderColor: "rgba(59, 130, 246, 0.4)" }
                         : undefined
                     }
                   >

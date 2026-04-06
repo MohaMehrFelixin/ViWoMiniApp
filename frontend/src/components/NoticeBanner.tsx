@@ -38,12 +38,12 @@ export function NoticeBanner() {
   // Swipe support
   const touchStartX = useRef(0);
   const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
+    touchStartX.current = e.touches[0]?.clientX ?? 0;
     setPaused(true);
   };
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (notices.length === 0) { setPaused(false); return; }
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dx = (e.changedTouches[0]?.clientX ?? 0) - touchStartX.current;
     const threshold = 40;
     if (Math.abs(dx) > threshold) {
       const dir = isFa ? -dx : dx;

@@ -23,6 +23,13 @@
     --tab-bg: rgba(255, 255, 255, 0.8);
     --tab-active-bg: rgba(0, 0, 0, 0.06);
     --radius: 16px;
+    /* Category colors */
+    --cat-water: #3B82F6;
+    --cat-food: #22C55E;
+    --cat-fuel: #F97316;
+    --cat-hygiene: #A855F7;
+    --cat-medical: #EF4444;
+    --cat-energy: #EAB308;
     --radius-lg: 22px;
     --accent: #007AFF;
   }

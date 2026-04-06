@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,6 +20,8 @@ type HouseholdRepository interface {
 	GetMembers(ctx context.Context, householdID int64) ([]model.HouseholdMember, error)
 	GetMemberByNationalCode(ctx context.Context, code string) (*model.HouseholdMember, error)
 	UpdateKYCTier(ctx context.Context, householdID int64, tier int) error
+	UpdateMember(ctx context.Context, memberID int64, req model.AddMemberRequest) error
+	SetMemberKYCVerified(ctx context.Context, memberID int64, verified bool) error
 }
 
 type postgresHouseholdRepo struct {
@@ -31,25 +34,25 @@ func NewPostgresHouseholdRepo(pool *pgxpool.Pool) HouseholdRepository {
 
 func (r *postgresHouseholdRepo) Create(ctx context.Context, household *model.Household) error {
 	query := `
-		INSERT INTO households (id, telegram_user_id, household_code, kyc_tier, address, lat, lng, province_code, location_segment, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO households (id, telegram_user_id, household_code, kyc_tier, phone_number, address, lat, lng, province_code, location_segment, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING created_at, updated_at`
 	return r.pool.QueryRow(ctx, query,
 		household.ID, household.TelegramUserID, household.HouseholdCode,
-		household.KYCTier, household.Address, household.Lat, household.Lng,
+		household.KYCTier, household.PhoneNumber, household.Address, household.Lat, household.Lng,
 		household.ProvinceCode, household.LocationSegment, household.Status,
 	).Scan(&household.CreatedAt, &household.UpdatedAt)
 }
 
 func (r *postgresHouseholdRepo) GetByID(ctx context.Context, id int64) (*model.Household, error) {
 	query := `
-		SELECT id, telegram_user_id, household_code, kyc_tier, address, lat, lng,
+		SELECT id, telegram_user_id, household_code, kyc_tier, COALESCE(phone_number, ''), address, lat, lng,
 		       province_code, location_segment, status, created_at, updated_at
 		FROM households WHERE id = $1`
 	var h model.Household
 	err := r.pool.QueryRow(ctx, query, id).Scan(
 		&h.ID, &h.TelegramUserID, &h.HouseholdCode, &h.KYCTier,
-		&h.Address, &h.Lat, &h.Lng, &h.ProvinceCode,
+		&h.PhoneNumber, &h.Address, &h.Lat, &h.Lng, &h.ProvinceCode,
 		&h.LocationSegment, &h.Status, &h.CreatedAt, &h.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -63,13 +66,13 @@ func (r *postgresHouseholdRepo) GetByID(ctx context.Context, id int64) (*model.H
 
 func (r *postgresHouseholdRepo) GetByTelegramUserID(ctx context.Context, telegramUserID int64) (*model.Household, error) {
 	query := `
-		SELECT id, telegram_user_id, household_code, kyc_tier, address, lat, lng,
+		SELECT id, telegram_user_id, household_code, kyc_tier, COALESCE(phone_number, ''), address, lat, lng,
 		       province_code, location_segment, status, created_at, updated_at
 		FROM households WHERE telegram_user_id = $1`
 	var h model.Household
 	err := r.pool.QueryRow(ctx, query, telegramUserID).Scan(
 		&h.ID, &h.TelegramUserID, &h.HouseholdCode, &h.KYCTier,
-		&h.Address, &h.Lat, &h.Lng, &h.ProvinceCode,
+		&h.PhoneNumber, &h.Address, &h.Lat, &h.Lng, &h.ProvinceCode,
 		&h.LocationSegment, &h.Status, &h.CreatedAt, &h.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -144,6 +147,36 @@ func (r *postgresHouseholdRepo) UpdateKYCTier(ctx context.Context, householdID i
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("household_repo: household %d not found", householdID)
+	}
+	return nil
+}
+
+func (r *postgresHouseholdRepo) UpdateMember(ctx context.Context, memberID int64, req model.AddMemberRequest) error {
+	// Parse birth_date string to time.Time for PostgreSQL date column
+	birthDate, err := time.Parse("2006-01-02", req.BirthDate)
+	if err != nil {
+		return fmt.Errorf("household_repo: invalid birth date %q: %w", req.BirthDate, err)
+	}
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE household_members SET full_name = $1, gender = $2, birth_date = $3 WHERE id = $4`,
+		req.FullName, req.Gender, birthDate, memberID,
+	)
+	if err != nil {
+		return fmt.Errorf("household_repo: update member: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("household_repo: member %d not found", memberID)
+	}
+	return nil
+}
+
+func (r *postgresHouseholdRepo) SetMemberKYCVerified(ctx context.Context, memberID int64, verified bool) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE household_members SET kyc_verified = $1 WHERE id = $2`,
+		verified, memberID,
+	)
+	if err != nil {
+		return fmt.Errorf("household_repo: set kyc_verified: %w", err)
 	}
 	return nil
 }

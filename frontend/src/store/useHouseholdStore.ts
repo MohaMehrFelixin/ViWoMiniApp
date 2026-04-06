@@ -13,12 +13,6 @@ interface HouseholdState {
 
   fetchHousehold: () => Promise<void>;
   fetchMembers: () => Promise<void>;
-  register: (
-    nationalCode: string,
-    address: string,
-    lat: number,
-    lng: number
-  ) => Promise<void>;
   addMember: (
     data: Parameters<typeof couponApi.addMember>[0]
   ) => Promise<void>;
@@ -59,25 +53,6 @@ export const useHouseholdStore = create<HouseholdState>()(
           set({ members: res.members });
         } catch {
           // keep stale members on failure
-        }
-      },
-
-      register: async (nationalCode, address, lat, lng) => {
-        set({ loading: true, error: null, loggedOut: false });
-        try {
-          const household = await couponApi.registerHousehold({
-            national_code: nationalCode,
-            address,
-            lat,
-            lng,
-          });
-          set({ household, loading: false, lastFetched: Date.now() });
-          get().fetchMembers();
-        } catch (err) {
-          const msg =
-            err instanceof Error ? err.message : "Registration failed";
-          set({ loading: false, error: msg });
-          throw err;
         }
       },
 

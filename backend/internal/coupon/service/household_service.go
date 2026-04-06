@@ -31,6 +31,48 @@ func (s *HouseholdService) RegisterHousehold(ctx context.Context, telegramUserID
 		return nil, fmt.Errorf("household_service: check existing: %w", err)
 	}
 	if existing != nil {
+		// Update head member with real KYC data if any field still has dummy values
+		if req.FullName != "" || req.BirthDate != "" || req.Gender != "" {
+			members, _ := s.householdRepo.GetMembers(ctx, existing.ID)
+			for _, m := range members {
+				if m.Relationship != "head" {
+					continue
+				}
+				dummyName := m.FullName == "Head of Household" || m.FullName == "سرپرست"
+				dummyBirth := m.BirthDate.Format("2006-01-02") == "1990-01-01"
+				dummyGender := m.Gender == "other"
+
+				if dummyName || dummyBirth || dummyGender {
+					fullName := req.FullName
+					if fullName == "" {
+						fullName = m.FullName
+					}
+					birthDate := req.BirthDate
+					if birthDate == "" {
+						birthDate = m.BirthDate.Format("2006-01-02")
+					}
+					gender := req.Gender
+					if gender == "" {
+						gender = m.Gender
+					}
+					s.logger.Info("updating head member with real KYC data",
+						zap.Int64("household_id", existing.ID),
+						zap.Bool("dummy_name", dummyName),
+						zap.Bool("dummy_birth", dummyBirth),
+						zap.Bool("dummy_gender", dummyGender),
+					)
+					updateReq := model.AddMemberRequest{
+						NationalCode: m.NationalCode,
+						FullName:     fullName,
+						BirthDate:    birthDate,
+						Gender:       gender,
+						Relationship: "head",
+					}
+					_ = s.householdRepo.UpdateMember(ctx, m.ID, updateReq)
+				}
+				break
+			}
+		}
 		return existing, nil
 	}
 	householdID, err := s.idGen.Generate()
@@ -47,7 +89,8 @@ func (s *HouseholdService) RegisterHousehold(ctx context.Context, telegramUserID
 	household := &model.Household{
 		ID: householdID, TelegramUserID: telegramUserID,
 		HouseholdCode: householdCode, KYCTier: model.KYCTierDigital,
-		Address: req.Address, Lat: req.Lat, Lng: req.Lng,
+		PhoneNumber: req.Mobile, Address: req.Address,
+		Lat: req.Lat, Lng: req.Lng,
 		ProvinceCode: provinceCode, LocationSegment: locationSegment,
 		Status: model.HouseholdStatusActive,
 	}
@@ -62,12 +105,34 @@ func (s *HouseholdService) RegisterHousehold(ctx context.Context, telegramUserID
 		return nil, fmt.Errorf("household_service: create: %w", err)
 	}
 	s.logger.Info("household registered", zap.Int64("id", householdID), zap.Int64("tg_user", telegramUserID))
-	headMemberReq := model.AddMemberRequest{
-		NationalCode: req.NationalCode, FullName: "Head of Household",
-		BirthDate: "1990-01-01", Gender: "other", Relationship: "head",
+
+	// Use real personal data from KYC flow (no more dummy values)
+	fullName := req.FullName
+	if fullName == "" {
+		fullName = "Head of Household"
 	}
-	if _, err := s.AddMember(ctx, householdID, headMemberReq); err != nil {
+	birthDate := req.BirthDate
+	if birthDate == "" {
+		birthDate = "1990-01-01"
+	}
+	gender := req.Gender
+	if gender == "" {
+		gender = "other"
+	}
+	kycVerified := req.KYCTrackID != ""
+
+	headMemberReq := model.AddMemberRequest{
+		NationalCode: req.NationalCode, FullName: fullName,
+		BirthDate: birthDate, Gender: gender, Relationship: "head",
+	}
+	headMember, err := s.AddMember(ctx, householdID, headMemberReq)
+	if err != nil {
 		s.logger.Warn("failed to auto-add head member", zap.Error(err))
+	} else if kycVerified && headMember != nil {
+		// Persist KYC verified status to database (not just in-memory)
+		if err := s.householdRepo.SetMemberKYCVerified(ctx, headMember.ID, true); err != nil {
+			s.logger.Warn("failed to set kyc_verified", zap.Error(err))
+		}
 	}
 	return household, nil
 }

@@ -12,7 +12,7 @@ export function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
     <div className="flex min-h-[50vh] items-center justify-center p-6">
       <div className="glass glass-animate flex flex-col items-center gap-4 p-8 text-center">
-        <div style={{ color: "var(--cat-energy)" }}>
+        <div style={{ color: "#EAB308" }}>
           <IconWarning size={48} />
         </div>
         <h2 className="text-primary text-lg font-semibold">

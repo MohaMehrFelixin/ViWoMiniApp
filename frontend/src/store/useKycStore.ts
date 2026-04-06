@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 
 export interface KycData {
   nationalCode: string;
+  mobile: string;
   fullName: string;
   birthDate: string;
   gender: string;
@@ -11,6 +12,11 @@ export interface KycData {
   lng: number;
   kycTier: number;
   completedAt: string;
+  kycTrackId: string;
+  otpVerified: boolean;
+  identityVerified: boolean;
+  otpAttempts: number;
+  otpSendCount: number;
 }
 
 interface KycState {
@@ -61,6 +67,8 @@ export const useKycStore = create<KycState>()(
       partialize: (state) => ({
         completed: state.completed,
         data: state.data,
+        currentStep: state.currentStep,
+        draft: state.draft,
       }),
     }
   )

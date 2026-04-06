@@ -98,19 +98,15 @@ export function ShamsiDatePicker({ value, onChange, className, "aria-label": ari
     setOpen(false);
   };
 
-  const isDark = typeof document !== "undefined" && (
-    document.documentElement.classList.contains("dark") ||
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-  );
-
+  // Use app's CSS custom properties for consistent theming
   const colors = {
-    bg: isDark ? "#1c1c1e" : "#ffffff",
-    surface: isDark ? "#2c2c2e" : "#f2f2f7",
-    surfaceHover: isDark ? "#3a3a3c" : "#e5e5ea",
-    border: isDark ? "#3a3a3c" : "#d1d1d6",
-    text: isDark ? "#ffffff" : "#000000",
-    textSecondary: isDark ? "#ababab" : "#6b6b6b",
-    accent: "#007AFF",
+    bg: "var(--card-bg, #1c1c1e)",
+    surface: "var(--separator, #2c2c2e)",
+    surfaceHover: "var(--tab-active-bg, #3a3a3c)",
+    border: "var(--card-border, #3a3a3c)",
+    text: "var(--text-1, #ffffff)",
+    textSecondary: "var(--text-2, #ababab)",
+    accent: "var(--accent, #007AFF)",
   };
 
   return (

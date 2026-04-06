@@ -4,7 +4,7 @@ export function Loading() {
       <div className="glass glass-animate flex flex-col items-center gap-3 px-8 py-6">
         <div
           className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-          style={{ borderColor: "var(--lg-text-tertiary)", borderTopColor: "transparent" }}
+          style={{ borderColor: "var(--text-3)", borderTopColor: "transparent" }}
         />
         <span className="text-secondary text-sm">...</span>
       </div>
@@ -21,7 +21,7 @@ export function LoadingSkeleton({ lines = 3 }: { lines?: number }) {
           className="animate-pulse rounded-xl"
           style={{
             height: "14px",
-            background: "var(--lg-bg-subtle)",
+            background: "var(--separator)",
             width: `${85 - i * 15}%`,
           }}
         />

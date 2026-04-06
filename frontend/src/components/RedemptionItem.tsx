@@ -37,7 +37,7 @@ export function RedemptionItem({ redemption, onDispute }: RedemptionItemProps) {
               e.stopPropagation();
               onDispute(redemption.id);
             }}
-            className="glass-btn-sm text-xs"
+            className="glass-btn glass-btn-sm text-xs"
             aria-label={t("history.dispute")}
           >
             {t("history.dispute")}

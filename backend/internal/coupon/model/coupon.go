@@ -94,6 +94,7 @@ type Household struct {
 	TelegramUserID  int64     `json:"telegram_user_id"`
 	HouseholdCode   string    `json:"household_code"`
 	KYCTier         int       `json:"kyc_tier"`
+	PhoneNumber     string    `json:"phone_number,omitempty"`
 	Address         string    `json:"address"`
 	Lat             float64   `json:"lat"`
 	Lng             float64   `json:"lng"`
@@ -180,9 +181,14 @@ type QRPayload struct {
 
 type RegisterHouseholdRequest struct {
 	NationalCode string  `json:"national_code" validate:"required,len=10,numeric"`
+	FullName     string  `json:"full_name" validate:"required,min=2,max=200"`
+	BirthDate    string  `json:"birth_date" validate:"required"`
+	Gender       string  `json:"gender" validate:"required,oneof=male female other"`
+	Mobile       string  `json:"mobile" validate:"required,len=11"`
 	Address      string  `json:"address" validate:"required,max=500"`
 	Lat          float64 `json:"lat"`
 	Lng          float64 `json:"lng"`
+	KYCTrackID   string  `json:"kyc_track_id"`
 }
 
 type AddMemberRequest struct {
@@ -206,6 +212,27 @@ type RedeemRequest struct {
 
 type DisputeRequest struct {
 	Reason string `json:"reason" validate:"required,min=10,max=1000"`
+}
+
+type SendOTPRequest struct {
+	Mobile       string `json:"mobile" validate:"required,len=11"`
+	NationalCode string `json:"national_code" validate:"required,len=10,numeric"`
+}
+
+type VerifyOTPRequest struct {
+	Mobile       string `json:"mobile" validate:"required,len=11"`
+	NationalCode string `json:"national_code" validate:"required,len=10,numeric"`
+	OTP          string `json:"otp" validate:"required,len=6,numeric"`
+	TrackID      string `json:"track_id" validate:"required"`
+}
+
+type VerifyIdentityRequest struct {
+	NationalCode string `json:"national_code" validate:"required,len=10,numeric"`
+	FullName     string `json:"full_name" validate:"required,min=2,max=200"`
+	BirthDate    string `json:"birth_date" validate:"required"`
+	Gender       string `json:"gender" validate:"required,oneof=male female other"`
+	Mobile       string `json:"mobile" validate:"required,len=11"`
+	TrackID      string `json:"track_id" validate:"required"`
 }
 
 // Response DTOs.

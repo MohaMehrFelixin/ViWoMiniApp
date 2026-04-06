@@ -66,7 +66,7 @@ export function PowerBankCard() {
       const lng = pos?.coords.longitude ?? 51.389;
       const nearby = await getNearbyCenters(lat, lng, "energy");
       if (nearby.centers.length > 0) {
-        centerID = nearby.centers[0].id;
+        centerID = nearby.centers[0]?.id ?? null;
       }
       if (!centerID) {
         setError(t("powerbank.noCenterFound") || "No energy center found nearby");

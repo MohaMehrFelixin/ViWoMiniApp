@@ -1,15 +1,17 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useKycStore } from "../store/useKycStore";
 import { useHouseholdStore } from "../store/useHouseholdStore";
 import { useVolunteerStore, VOLUNTEER_SPECIALTIES } from "../store/useVolunteerStore";
 import { useDistributorStore } from "../store/useDistributorStore";
-import { registerHousehold, getHousehold } from "../api/coupon";
+import { registerHousehold, getHousehold, sendOTP, verifyOTP, verifyIdentity } from "../api/coupon";
+import { extractErrorMessage } from "../lib/api-error";
 import type { Household } from "../lib/types";
-import { IconPackage, IconIdCard, IconUser, IconHouse, IconCheck } from "../components/Icons";
+import { IconPackage, IconIdCard, IconUser, IconHouse, IconCheck, IconShield } from "../components/Icons";
 import { ShamsiDatePicker } from "../components/ShamsiDatePicker";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 8;
+const ACTIVE_DOT_STEPS = 7; // Steps 1-7 shown as dots (step 0 Welcome has no dots)
 
 // --- Step Indicator ---
 function StepDots({ current, total }: { current: number; total: number }) {
@@ -151,7 +153,326 @@ function StepNationalCode({
   );
 }
 
-// --- Step 2: Personal Info ---
+// --- Step 2: Phone Number ---
+function StepPhone({
+  value,
+  nationalCode,
+  onChange,
+  onNext,
+  onBack,
+  onTrackId,
+}: {
+  value: string;
+  nationalCode: string;
+  onChange: (v: string) => void;
+  onNext: () => void;
+  onBack: () => void;
+  onTrackId: (trackId: string, expiresIn: number) => void;
+}) {
+  const { t } = useTranslation();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleChange = (raw: string) => {
+    const normalized = raw
+      .replace(/[\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) - 0x06f0))
+      .replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660))
+      .replace(/\D/g, "")
+      .slice(0, 11);
+    onChange(normalized);
+  };
+
+  const isValid = /^09\d{9}$/.test(value);
+
+  const sendingRef = useRef(false);
+  const handleNext = async () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await sendOTP({ mobile: value, national_code: nationalCode });
+      onTrackId(result.track_id, result.expires_in);
+      onNext();
+    } catch (err) {
+      let message = t("kyc.otpSendFailed") || "Failed to send OTP";
+      if (err instanceof Error) message = err.message;
+      setError(message);
+    } finally {
+      setLoading(false);
+      sendingRef.current = false;
+    }
+  };
+
+  return (
+    <div className="glass glass-animate space-y-5 p-6">
+      <div className="text-center">
+        <div className="text-secondary"><IconShield size={40} /></div>
+        <h2 className="text-primary mt-3 text-xl font-bold">
+          {t("kyc.phoneTitle")}
+        </h2>
+        <p className="text-secondary mt-1 text-sm">
+          {t("kyc.phoneDesc")}
+        </p>
+      </div>
+
+      <input
+        className="glass-input text-center text-lg font-mono tracking-[0.2em]"
+        placeholder={t("kyc.phonePlaceholder") || "09xxxxxxxxx"}
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+        inputMode="numeric"
+        maxLength={11}
+        autoFocus
+        dir="ltr"
+        aria-label={t("kyc.phoneTitle")}
+      />
+
+      {value.length > 0 && value.length < 11 && (
+        <p className="text-tertiary text-center text-xs">{value.length}/11</p>
+      )}
+
+      {error && (
+        <div
+          className="glass-subtle rounded-2xl p-3 text-center text-sm"
+          style={{ borderColor: "rgba(239, 68, 68, 0.3)", color: "var(--cat-medical)" }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button className="glass-btn flex-1" onClick={onBack} disabled={loading}>
+          {t("common.back")}
+        </button>
+        <button
+          className="glass-btn glass-btn-primary flex-1"
+          onClick={handleNext}
+          disabled={!isValid || loading}
+        >
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              {t("kyc.verifying")}
+            </span>
+          ) : (
+            t("kyc.next")
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Step 3: OTP Verification ---
+function StepOTPVerify({
+  mobile,
+  nationalCode,
+  trackId,
+  expiresIn,
+  attempts: initialAttempts,
+  onNext,
+  onBack,
+  onResend,
+  onAttempt,
+}: {
+  mobile: string;
+  nationalCode: string;
+  trackId: string;
+  expiresIn: number;
+  attempts: number;
+  onNext: () => void;
+  onBack: () => void;
+  onResend: () => Promise<{ track_id: string; expires_in: number }>;
+  onAttempt: (count: number) => void;
+}) {
+  const { t } = useTranslation();
+  const [otp, setOtp] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState(initialAttempts);
+  const maxAttempts = 3;
+
+  // Countdown timer
+  const [secondsLeft, setSecondsLeft] = useState(expiresIn);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    setSecondsLeft(expiresIn);
+  }, [expiresIn]);
+
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (secondsLeft <= 0) return;
+    timerRef.current = setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [secondsLeft]);
+
+  const formatTimer = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
+  const handleChange = (raw: string) => {
+    const normalized = raw
+      .replace(/[\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) - 0x06f0))
+      .replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660))
+      .replace(/\D/g, "")
+      .slice(0, 6);
+    setOtp(normalized);
+  };
+
+  const handleSubmit = async () => {
+    if (attempts >= maxAttempts) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await verifyOTP({
+        mobile,
+        national_code: nationalCode,
+        otp,
+        track_id: trackId,
+      });
+      if (result.verified) {
+        onNext();
+      } else {
+        const newCount = attempts + 1;
+        setAttempts(newCount);
+        onAttempt(newCount);
+        setError(t("kyc.otpWrong"));
+      }
+    } catch (err) {
+      const newCount = attempts + 1;
+      setAttempts(newCount);
+      onAttempt(newCount);
+      let message = t("kyc.otpWrong");
+      if (err instanceof Error) message = err.message;
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError(null);
+    setOtp("");
+    try {
+      const result = await onResend();
+      setSecondsLeft(result.expires_in);
+      setAttempts(0);
+    } catch (err) {
+      let message = t("kyc.otpSendFailed") || "Failed to resend OTP";
+      if (err instanceof Error) message = err.message;
+      setError(message);
+    }
+  };
+
+  const isValid = /^\d{6}$/.test(otp);
+  const timerExpired = secondsLeft <= 0;
+  const tooManyAttempts = attempts >= maxAttempts;
+
+  return (
+    <div className="glass glass-animate space-y-5 p-6">
+      <div className="text-center">
+        <div className="text-secondary"><IconShield size={40} /></div>
+        <h2 className="text-primary mt-3 text-xl font-bold">
+          {t("kyc.otpTitle")}
+        </h2>
+        <p className="text-secondary mt-1 text-sm">
+          {t("kyc.otpDesc")}
+        </p>
+      </div>
+
+      <input
+        className="glass-input text-center text-2xl font-mono tracking-[0.5em]"
+        placeholder={t("kyc.otpPlaceholder") || "------"}
+        value={otp}
+        onChange={(e) => handleChange(e.target.value)}
+        inputMode="numeric"
+        maxLength={6}
+        autoFocus
+        dir="ltr"
+        aria-label={t("kyc.otpTitle")}
+        disabled={tooManyAttempts}
+      />
+
+      {/* Timer and resend */}
+      <div className="text-center">
+        {!timerExpired ? (
+          <p className="text-secondary text-sm">
+            {formatTimer(secondsLeft)}
+          </p>
+        ) : (
+          <button
+            className="glass-btn glass-btn-sm"
+            onClick={handleResend}
+            disabled={!timerExpired}
+          >
+            {t("kyc.otpResend")}
+          </button>
+        )}
+      </div>
+
+      {/* Attempts display */}
+      {attempts > 0 && !tooManyAttempts && (
+        <p className="text-tertiary text-center text-xs">
+          {attempts}/{maxAttempts}
+        </p>
+      )}
+
+      {tooManyAttempts && (
+        <div
+          className="glass-subtle rounded-2xl p-3 text-center text-sm"
+          style={{ borderColor: "rgba(239, 68, 68, 0.3)", color: "var(--cat-medical)" }}
+        >
+          {t("kyc.tooManyAttempts")}
+        </div>
+      )}
+
+      {error && !tooManyAttempts && (
+        <div
+          className="glass-subtle rounded-2xl p-3 text-center text-sm"
+          style={{ borderColor: "rgba(239, 68, 68, 0.3)", color: "var(--cat-medical)" }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button className="glass-btn flex-1" onClick={onBack} disabled={loading}>
+          {t("common.back")}
+        </button>
+        <button
+          className="glass-btn glass-btn-primary flex-1"
+          onClick={handleSubmit}
+          disabled={!isValid || loading || tooManyAttempts}
+        >
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              {t("kyc.verifying")}
+            </span>
+          ) : (
+            t("kyc.next")
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Step 4: Personal Info (was Step 2) ---
 function StepPersonalInfo({
   fullName,
   birthDate,
@@ -172,7 +493,7 @@ function StepPersonalInfo({
   onBack: () => void;
 }) {
   const { t } = useTranslation();
-  const isValid = fullName.trim().length >= 2 && birthDate.length > 0;
+  const isValid = fullName.trim().length >= 2 && birthDate.length > 0 && gender.length > 0;
 
   return (
     <div className="glass glass-animate space-y-5 p-6">
@@ -234,7 +555,7 @@ function StepPersonalInfo({
   );
 }
 
-// --- Step 3: Address ---
+// --- Step 5: Address (was Step 3) ---
 function StepAddress({
   address,
   onChange,
@@ -266,6 +587,7 @@ function StepAddress({
         placeholder={t("household.address")}
         value={address}
         onChange={(e) => onChange(e.target.value)}
+        maxLength={500}
         autoFocus
         aria-label={t("household.address")}
       />
@@ -286,7 +608,7 @@ function StepAddress({
   );
 }
 
-// --- Step 4: Volunteer ---
+// --- Step 6: Volunteer (was Step 4) ---
 function StepVolunteer({
   onNext,
   onBack,
@@ -401,17 +723,27 @@ function StepVolunteer({
   );
 }
 
-// --- Step 5: Distributor + Submit ---
+// --- Step 7: Distributor + Submit (was Step 5) ---
 function StepDistributorAndSubmit({
   onBack,
   onRegistered,
   nationalCode,
+  fullName,
+  birthDate,
+  gender,
+  mobile,
   address,
+  kycTrackId,
 }: {
   onBack: () => void;
   onRegistered: (household: Household) => void;
   nationalCode: string;
+  fullName: string;
+  birthDate: string;
+  gender: string;
+  mobile: string;
   address: string;
+  kycTrackId: string;
 }) {
   const { t } = useTranslation();
   const { setDistributor } = useDistributorStore();
@@ -425,36 +757,58 @@ function StepDistributorAndSubmit({
     wants !== null &&
     (!wants || (storeAddr.trim().length > 0 && storeDesc.trim().length > 0));
 
+  const submittingRef = useRef(false);
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
 
     try {
       setDistributor(!!wants, storeAddr, storeDesc);
 
+      // Verify identity via Finnotech (Shahkar + NID) before registration
+      if (kycTrackId) {
+        const idResult = await verifyIdentity({
+          national_code: nationalCode,
+          full_name: fullName,
+          birth_date: birthDate,
+          gender,
+          mobile,
+          track_id: kycTrackId,
+        });
+        if (!idResult.shahkar_matched || !idResult.nid_verified) {
+          setError(
+            !idResult.shahkar_matched
+              ? t("kyc.shahkarFailed")
+              : t("kyc.nidFailed")
+          );
+          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
+          return;
+        }
+      }
+
       const household = await registerHousehold({
         national_code: nationalCode,
+        full_name: fullName,
+        birth_date: birthDate,
+        gender,
+        mobile,
         address,
         lat: 0,
         lng: 0,
+        kyc_track_id: kycTrackId,
       });
 
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
       onRegistered(household);
     } catch (err) {
-      let message = t("kyc.registrationFailed");
-      if (err && typeof err === "object" && "response" in err) {
-        try {
-          const body = await (err as { response: Response }).response.json();
-          if (body?.error?.message) message = body.error.message;
-        } catch { /* ignore */ }
-      } else if (err instanceof Error) {
-        message = err.message;
-      }
+      const message = await extractErrorMessage(err, t("kyc.registrationFailed"));
       setError(message);
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 
@@ -597,12 +951,18 @@ export function KycFlow() {
   const { currentStep, draft, setStep, updateDraft, completeKyc } = useKycStore();
   const [registeredHousehold, setRegisteredHousehold] = useState<Household | null>(null);
   const [checking, setChecking] = useState(true);
+  const [flowError, setFlowError] = useState<string | null>(null);
 
   const nationalCode = draft.nationalCode ?? "";
   const fullName = draft.fullName ?? "";
   const birthDate = draft.birthDate ?? "";
-  const gender = draft.gender ?? "male";
+  const gender = draft.gender ?? "";
   const address = draft.address ?? "";
+  const mobile = draft.mobile ?? "";
+  const kycTrackId = draft.kycTrackId ?? "";
+
+  // OTP expiry timer (not persisted — local state)
+  const [otpExpiresIn, setOtpExpiresIn] = useState(120);
 
   const goNext = useCallback(() => {
     setStep(currentStep + 1);
@@ -614,10 +974,11 @@ export function KycFlow() {
   }, [currentStep, setStep]);
 
   // Check if user already has a household on the backend
-  // Skip if user explicitly logged out
   const loggedOut = useHouseholdStore((s) => s.loggedOut);
   useEffect(() => {
     if (loggedOut) {
+      // User logged out — skip to national code + OTP login (step 1), not full onboarding
+      setStep(1);
       setChecking(false);
       return;
     }
@@ -626,22 +987,29 @@ export function KycFlow() {
     getHousehold()
       .then((res) => {
         if (cancelled) return;
-        // Already registered — populate store and skip KYC
+        // Already registered — populate stores and skip KYC
         useHouseholdStore.setState({
           household: res.household,
           members: res.members,
           loggedOut: false,
           lastFetched: Date.now(),
         });
+        const head = res.members?.find((m) => m.relationship === "head");
         completeKyc({
-          nationalCode: "",
-          fullName: "",
-          birthDate: "",
-          gender: "",
-          address: "",
-          lat: 0,
-          lng: 0,
+          nationalCode: head?.national_code ?? "",
+          mobile: res.household.phone_number ?? "",
+          fullName: head?.full_name ?? "",
+          birthDate: head?.birth_date ?? "",
+          gender: head?.gender ?? "",
+          address: res.household.address ?? "",
+          lat: res.household.lat ?? 0,
+          lng: res.household.lng ?? 0,
           kycTier: res.household.kyc_tier,
+          kycTrackId: "",
+          otpVerified: true,
+          identityVerified: true,
+          otpAttempts: 0,
+          otpSendCount: 0,
           completedAt: new Date().toISOString(),
         });
       })
@@ -656,20 +1024,38 @@ export function KycFlow() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loggedOut]);
 
-  const handleRegistered = (household: Household) => {
-    // Populate household store so the main app has data immediately
-    useHouseholdStore.setState({
-      household,
-      members: [],
-      loggedOut: false,
-      lastFetched: Date.now(),
-    });
+  const handleRegistered = async (household: Household) => {
+    // Fetch full household + members from backend to populate store correctly
+    try {
+      const res = await getHousehold();
+      useHouseholdStore.setState({
+        household: res.household,
+        members: res.members,
+        loggedOut: false,
+        lastFetched: Date.now(),
+      });
+    } catch {
+      // Fallback: use the returned household with head member from draft
+      useHouseholdStore.setState({
+        household,
+        members: [{
+          id: 0, household_id: household.id,
+          national_code: nationalCode, full_name: fullName,
+          birth_date: birthDate, gender, relationship: "head",
+          age_group: "", special_flags: [], kyc_verified: true,
+          created_at: new Date().toISOString(),
+        }],
+        loggedOut: false,
+        lastFetched: Date.now(),
+      });
+    }
     setRegisteredHousehold(household);
   };
 
   const handleEnterApp = () => {
     completeKyc({
       nationalCode,
+      mobile,
       fullName,
       birthDate,
       gender,
@@ -677,6 +1063,11 @@ export function KycFlow() {
       lat: 0,
       lng: 0,
       kycTier: registeredHousehold?.kyc_tier ?? 1,
+      kycTrackId,
+      otpVerified: true,
+      identityVerified: true,
+      otpAttempts: 0,
+      otpSendCount: 0,
       completedAt: new Date().toISOString(),
     });
   };
@@ -719,6 +1110,81 @@ export function KycFlow() {
         );
       case 2:
         return (
+          <StepPhone
+            value={mobile}
+            nationalCode={nationalCode}
+            onChange={(v) => updateDraft({ mobile: v })}
+            onNext={goNext}
+            onBack={goBack}
+            onTrackId={(trackId, expiresIn) => {
+              updateDraft({ kycTrackId: trackId });
+              setOtpExpiresIn(expiresIn);
+            }}
+          />
+        );
+      case 3:
+        return (
+          <StepOTPVerify
+            mobile={mobile}
+            nationalCode={nationalCode}
+            trackId={kycTrackId}
+            expiresIn={otpExpiresIn}
+            attempts={Number(draft.otpAttempts) || 0}
+            onAttempt={(count) => updateDraft({ otpAttempts: count })}
+            onNext={async () => {
+              updateDraft({ otpVerified: true });
+              // If re-login (not fresh registration), try to fetch existing household
+              if (loggedOut) {
+                try {
+                  const res = await getHousehold();
+                  const head = res.members?.find((m) => m.relationship === "head");
+
+                  // Verify entered national code matches the household on record
+                  if (head && head.national_code !== nationalCode) {
+                    setFlowError(t("kyc.nationalCodeMismatch") || "National code does not match this account");
+                    return;
+                  }
+
+                  useHouseholdStore.setState({
+                    household: res.household,
+                    members: res.members,
+                    loggedOut: false,
+                    lastFetched: Date.now(),
+                  });
+                  completeKyc({
+                    nationalCode: head?.national_code ?? nationalCode,
+                    mobile,
+                    fullName: head?.full_name ?? "",
+                    birthDate: head?.birth_date ?? "",
+                    gender: head?.gender ?? "",
+                    address: res.household.address ?? "",
+                    lat: res.household.lat ?? 0,
+                    lng: res.household.lng ?? 0,
+                    kycTier: res.household.kyc_tier,
+                    kycTrackId,
+                    otpVerified: true,
+                    identityVerified: true,
+                    completedAt: new Date().toISOString(),
+                    otpAttempts: 0,
+                    otpSendCount: 0,
+                  });
+                  return; // Skip to main app — no need for personal info/address/etc
+                } catch {
+                  // No existing household — continue with full registration
+                }
+              }
+              goNext();
+            }}
+            onBack={goBack}
+            onResend={async () => {
+              const result = await sendOTP({ mobile, national_code: nationalCode });
+              updateDraft({ kycTrackId: result.track_id });
+              return result;
+            }}
+          />
+        );
+      case 4:
+        return (
           <StepPersonalInfo
             fullName={fullName}
             birthDate={birthDate}
@@ -730,7 +1196,7 @@ export function KycFlow() {
             onBack={goBack}
           />
         );
-      case 3:
+      case 5:
         return (
           <StepAddress
             address={address}
@@ -739,20 +1205,25 @@ export function KycFlow() {
             onBack={goBack}
           />
         );
-      case 4:
+      case 6:
         return (
           <StepVolunteer
             onNext={goNext}
             onBack={goBack}
           />
         );
-      case 5:
+      case 7:
         return (
           <StepDistributorAndSubmit
             onBack={goBack}
             onRegistered={handleRegistered}
             nationalCode={nationalCode}
+            fullName={fullName}
+            birthDate={birthDate}
+            gender={gender}
+            mobile={mobile}
             address={address}
+            kycTrackId={kycTrackId}
           />
         );
       default:
@@ -764,7 +1235,12 @@ export function KycFlow() {
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
       {currentStep > 0 && currentStep < TOTAL_STEPS && (
         <div className="mb-6 w-full max-w-sm">
-          <StepDots current={currentStep} total={TOTAL_STEPS} />
+          <StepDots current={currentStep - 1} total={ACTIVE_DOT_STEPS} />
+        </div>
+      )}
+      {flowError && (
+        <div className="glass-subtle mb-4 w-full max-w-sm rounded-2xl p-3 text-center text-sm" style={{ borderColor: "rgba(239, 68, 68, 0.3)", color: "var(--cat-medical)" }}>
+          {flowError}
         </div>
       )}
       <div className="w-full max-w-sm">{renderStep()}</div>

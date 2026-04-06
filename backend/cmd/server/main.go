@@ -20,6 +20,7 @@ import (
 	couponHandler "github.com/viwo-app/mini-coupon/internal/coupon/handler"
 	"github.com/viwo-app/mini-coupon/internal/coupon/repository"
 	"github.com/viwo-app/mini-coupon/internal/coupon/service"
+	"github.com/viwo-app/mini-coupon/internal/finnotech"
 	"github.com/viwo-app/mini-coupon/internal/idgen"
 	"github.com/viwo-app/mini-coupon/internal/middleware"
 )
@@ -74,8 +75,21 @@ func main() {
 	distributionSvc := service.NewDistributionService(distributionRepo, logger)
 	powerBankSvc := service.NewPowerBankService(powerBankRepo, householdRepo, idGen, logger)
 
-	handler := couponHandler.NewCouponHandler(householdSvc, allocationSvc, redemptionSvc, distributionSvc, powerBankSvc, logger)
-	tgAuth := middleware.TelegramAuth(cfg.TelegramBotToken, cfg.Environment)
+	// Finnotech + KYC.
+	var fnClient *finnotech.Client
+	if cfg.Finnotech.Enabled {
+		fnClient = finnotech.NewClient(
+			cfg.Finnotech.BaseURL, cfg.Finnotech.ClientID,
+			cfg.Finnotech.ClientSecret, cfg.Finnotech.RedirectURI, logger,
+		)
+		logger.Info("finnotech KYC enabled")
+	} else {
+		logger.Info("finnotech KYC disabled (development mode)")
+	}
+	kycSvc := service.NewKYCService(fnClient, rdb, logger, cfg.Finnotech.Enabled)
+
+	handler := couponHandler.NewCouponHandler(householdSvc, allocationSvc, redemptionSvc, distributionSvc, powerBankSvc, kycSvc, rdb, logger)
+	tgAuth := middleware.TelegramAuth(cfg.TelegramBotToken)
 
 	r := chi.NewRouter()
 	r.Use(middleware.CORS())

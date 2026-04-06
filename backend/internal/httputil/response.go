@@ -20,6 +20,22 @@ func HandleServiceError(w http.ResponseWriter, err error, logger *zap.Logger, op
 		appErrors.WriteJSON(w, appErr)
 		return
 	}
+
+	// Bridge for classified errors from other packages (e.g., finnotech)
+	// that carry HTTP status and error code without importing internal/errors.
+	type classified interface {
+		HTTPStatusCode() int
+		ErrorCode() string
+	}
+	if ce, ok := err.(classified); ok {
+		appErrors.WriteJSON(w, &appErrors.AppError{
+			Code:       ce.ErrorCode(),
+			Message:    err.Error(),
+			HTTPStatus: ce.HTTPStatusCode(),
+		})
+		return
+	}
+
 	logger.Error("unhandled service error", zap.String("operation", operation), zap.Error(err))
 	appErrors.WriteJSON(w, appErrors.ErrInternalServer)
 }

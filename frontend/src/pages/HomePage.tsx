@@ -35,7 +35,7 @@ export function HomePage() {
 
   if (loading && balances.length === 0) return <Loading />;
   if (error && balances.length === 0)
-    return <ErrorState message={error} onRetry={fetchBalances} />;
+    return <ErrorState message={error} onRetry={() => { fetchHousehold(); fetchBalances(); }} />;
 
   if (balances.length === 0) {
     return (
@@ -73,7 +73,7 @@ export function HomePage() {
         <button
           onClick={toggleLang}
           className="glass-btn glass-btn-sm"
-          aria-label="Toggle language"
+          aria-label={i18n.language === "fa" ? "تغییر زبان" : "Toggle language"}
         >
           {i18n.language === "fa" ? "EN" : "\u0641\u0627"}
         </button>

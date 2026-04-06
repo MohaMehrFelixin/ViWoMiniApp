@@ -36,21 +36,15 @@ type telegramUser struct {
 
 // TelegramAuth returns middleware that validates Telegram Mini App initData.
 // The initData is passed in the Authorization header as "tma <initData>".
-// In development mode, requests without valid auth fall back to a fixed dev user ID.
-func TelegramAuth(botToken string, environment ...string) func(http.Handler) http.Handler {
-	isDev := len(environment) > 0 && environment[0] == "development"
-
+func TelegramAuth(botToken string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-
-			// Dev bypass: if no auth header in development mode, use a fixed user ID.
-			if authHeader == "" && isDev {
-				const devUserID int64 = 123456789
-				ctx := context.WithValue(r.Context(), TelegramUserIDKey, devUserID)
-				next.ServeHTTP(w, r.WithContext(ctx))
+			if botToken == "" {
+				appErrors.WriteJSON(w, appErrors.ErrUnauthorized.WithMessage("Authentication service not configured"))
 				return
 			}
+
+			authHeader := r.Header.Get("Authorization")
 
 			if authHeader == "" {
 				appErrors.WriteJSON(w, appErrors.ErrUnauthorized)
@@ -67,13 +61,6 @@ func TelegramAuth(botToken string, environment ...string) func(http.Handler) htt
 
 			userID, err := validateInitData(initData, botToken)
 			if err != nil {
-				// In dev mode, fall back to dev user if Telegram validation fails.
-				if isDev {
-					const devUserID int64 = 123456789
-					ctx := context.WithValue(r.Context(), TelegramUserIDKey, devUserID)
-					next.ServeHTTP(w, r.WithContext(ctx))
-					return
-				}
 				appErrors.WriteJSON(w, appErrors.ErrUnauthorized.WithMessage(err.Error()))
 				return
 			}
@@ -133,9 +120,13 @@ func validateInitData(initData, botToken string) (int64, error) {
 	// HMAC-SHA256(secretKey, dataCheckString) → computed hash
 	dataMac := hmac.New(sha256.New, secretKey)
 	dataMac.Write([]byte(dataCheckString))
-	computedHash := hex.EncodeToString(dataMac.Sum(nil))
+	computedHash := dataMac.Sum(nil)
 
-	if !hmac.Equal([]byte(computedHash), []byte(hash)) {
+	clientHash, err := hex.DecodeString(hash)
+	if err != nil {
+		return 0, fmt.Errorf("invalid hash format in initData")
+	}
+	if !hmac.Equal(computedHash, clientHash) {
 		return 0, fmt.Errorf("invalid initData signature")
 	}
 

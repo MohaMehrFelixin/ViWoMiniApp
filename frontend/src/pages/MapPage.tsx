@@ -78,9 +78,19 @@ export function MapPage() {
   const [userPos, setUserPos] = useState<L.LatLng | null>(null);
   const [selected, setSelected] = useState<DistributionCenter | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const isDark = document.documentElement.classList.contains("dark");
+  const [isDark, setIsDark] = useState(document.documentElement.classList.contains("dark"));
 
+  // React to Telegram theme changes
   useEffect(() => {
+    const check = () => setIsDark(document.documentElement.classList.contains("dark"));
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const loadCenters = () => {
+    setError(null);
+    setLoading(true);
     const load = async (lat: number, lng: number, isUser: boolean) => {
       try {
         if (isUser) setUserPos(L.latLng(lat, lng));
@@ -103,10 +113,13 @@ export function MapPage() {
       () => load(TEHRAN.lat, TEHRAN.lng, false),
       { enableHighAccuracy: false, timeout: 5000 }
     );
-  }, []);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadCenters(); }, []);
 
   if (loading) return <Loading />;
-  if (error) return <ErrorState message={error} />;
+  if (error) return <ErrorState message={error} onRetry={loadCenters} />;
 
   const mapCenter = userPos
     ? { lat: userPos.lat, lng: userPos.lng }
@@ -170,7 +183,7 @@ export function MapPage() {
       <div
         className="absolute inset-x-0 z-[999] transition-all duration-300 ease-out"
         style={{
-          bottom: "90px",
+          bottom: "calc(80px + max(12px, env(safe-area-inset-bottom)))",
           maxHeight: sheetOpen && selected ? "calc(100vh - 160px)" : "180px",
           padding: "0 12px",
         }}
@@ -229,6 +242,11 @@ export function MapPage() {
               >
                 {t("map.directions")}
               </button>
+            </div>
+          ) : centers.length === 0 ? (
+            /* Empty state */
+            <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
+              <p className="text-secondary text-sm">{t("map.noCenters")}</p>
             </div>
           ) : (
             /* Center list */

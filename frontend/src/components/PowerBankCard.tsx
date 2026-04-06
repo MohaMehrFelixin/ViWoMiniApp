@@ -7,6 +7,7 @@ import {
   pickUpPowerBank,
   returnPowerBank,
   cancelPowerBankSwap,
+  getNearbyCenters,
 } from "../api/coupon";
 import { useHouseholdStore } from "../store/useHouseholdStore";
 import { IconEnergy } from "./Icons";
@@ -28,9 +29,12 @@ export function PowerBankCard() {
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isHead = members.some(
+  // Check if the FIRST member (head of household registered by this Telegram user) exists
+  // In the current system, the first member added is always the head
+  const headMember = members.find(
     (m: HouseholdMember) => m.relationship.toLowerCase() === "head"
   );
+  const isHead = !!headMember;
 
   const fetchSwaps = async () => {
     try {
@@ -52,8 +56,23 @@ export function PowerBankCard() {
     setActing(true);
     setError(null);
     try {
-      // Use center ID 1001 as default (nearest center logic could be added later)
-      const res = await requestPowerBankSwap(1001);
+      // Find nearest energy distribution center via geolocation
+      let centerID: number | null = null;
+      const pos = await new Promise<GeolocationPosition | null>((resolve) => {
+        if (!navigator.geolocation) { resolve(null); return; }
+        navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), { timeout: 5000 });
+      });
+      const lat = pos?.coords.latitude ?? 35.6892;
+      const lng = pos?.coords.longitude ?? 51.389;
+      const nearby = await getNearbyCenters(lat, lng, "energy");
+      if (nearby.centers.length > 0) {
+        centerID = nearby.centers[0].id;
+      }
+      if (!centerID) {
+        setError(t("powerbank.noCenterFound") || "No energy center found nearby");
+        return;
+      }
+      const res = await requestPowerBankSwap(centerID);
       setActive(res.swap);
       await fetchSwaps();
     } catch (e) {

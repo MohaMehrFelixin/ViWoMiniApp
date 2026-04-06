@@ -3,6 +3,7 @@ export interface Household {
   telegram_user_id: number;
   household_code: string;
   kyc_tier: number;
+  phone_number?: string;
   address: string;
   lat: number;
   lng: number;
@@ -105,9 +106,51 @@ export interface DistributionCenter {
 
 export interface RegisterHouseholdRequest {
   national_code: string;
+  full_name: string;
+  birth_date: string;
+  gender: string;
+  mobile: string;
   address: string;
   lat: number;
   lng: number;
+  kyc_track_id?: string;
+}
+
+export interface SendOTPRequest {
+  mobile: string;
+  national_code: string;
+}
+
+export interface SendOTPResponse {
+  track_id: string;
+  expires_in: number;
+}
+
+export interface VerifyOTPRequest {
+  mobile: string;
+  national_code: string;
+  otp: string;
+  track_id: string;
+}
+
+export interface VerifyOTPResponse {
+  verified: boolean;
+  track_id: string;
+}
+
+export interface VerifyIdentityRequest {
+  national_code: string;
+  full_name: string;
+  birth_date: string;
+  gender: string;
+  mobile: string;
+  track_id: string;
+}
+
+export interface VerifyIdentityResponse {
+  shahkar_matched: boolean;
+  nid_verified: boolean;
+  track_id: string;
 }
 
 export interface AddMemberRequest {
@@ -120,7 +163,7 @@ export interface AddMemberRequest {
 }
 
 export interface GenerateQRRequest {
-  category: string;
+  category: CouponCategory;
   amount: string;
 }
 
@@ -138,6 +181,18 @@ export interface NearbyDistributionCentersResponse {
 
 export interface DisputeResponse {
   message: string;
+}
+
+export interface Notice {
+  id: string;
+  text: string;
+  text_fa: string;
+  type: "info" | "warning" | "promo";
+  link?: string;
+}
+
+export interface NoticesResponse {
+  notices: Notice[];
 }
 
 export interface ApiError {

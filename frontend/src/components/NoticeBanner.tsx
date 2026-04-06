@@ -1,47 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-
-interface Notice {
-  id: string;
-  text: string;
-  textFa: string;
-  type: "info" | "warning" | "promo";
-  link?: string;
-}
-
-// Mock notices — in production these come from an admin panel API
-const MOCK_NOTICES: Notice[] = [
-  {
-    id: "n1",
-    text: "Water distribution schedule updated for Week 2",
-    textFa: "برنامه توزیع آب هفته ۲ به‌روز شد",
-    type: "info",
-  },
-  {
-    id: "n2",
-    text: "New distribution center opened in Sadeghiyeh",
-    textFa: "مرکز توزیع جدید در صادقیه افتتاح شد",
-    type: "promo",
-  },
-  {
-    id: "n3",
-    text: "Bring your ID card for KYC upgrade — get 100% allocation",
-    textFa: "کارت ملی خود را برای ارتقای احراز هویت بیاورید — ۱۰۰٪ سهمیه",
-    type: "warning",
-  },
-  {
-    id: "n4",
-    text: "Volunteer doctors needed at District 12 center",
-    textFa: "نیاز به پزشکان داوطلب در مرکز منطقه ۱۲",
-    type: "info",
-  },
-  {
-    id: "n5",
-    text: "Fuel allocation increased by 15% this month",
-    textFa: "سهمیه سوخت این ماه ۱۵٪ افزایش یافت",
-    type: "promo",
-  },
-];
+import { getNotices } from "../api/coupon";
+import type { Notice } from "../lib/types";
 
 const TYPE_STYLES: Record<Notice["type"], { dot: string; bg: string }> = {
   info: { dot: "rgb(59,130,246)", bg: "rgba(59,130,246,0.08)" },
@@ -54,19 +14,26 @@ export function NoticeBanner() {
   const isFa = i18n.language === "fa";
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const notices = MOCK_NOTICES;
+  useEffect(() => {
+    let cancelled = false;
+    getNotices()
+      .then((res) => { if (!cancelled) setNotices(res.notices ?? []); })
+      .catch(() => { /* fail silently — no notices is fine */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const advance = useCallback(() => {
-    setCurrent((prev) => (prev + 1) % notices.length);
+    setCurrent((prev) => notices.length > 0 ? (prev + 1) % notices.length : 0);
   }, [notices.length]);
 
   useEffect(() => {
-    if (paused) return;
+    if (paused || notices.length === 0) return;
     timerRef.current = setInterval(advance, 4000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [paused, advance]);
+  }, [paused, advance, notices.length]);
 
   // Swipe support
   const touchStartX = useRef(0);
@@ -75,8 +42,8 @@ export function NoticeBanner() {
     setPaused(true);
   };
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (notices.length === 0) { setPaused(false); return; }
     const dx = e.changedTouches[0].clientX - touchStartX.current;
-    // In RTL, swipe directions are reversed
     const threshold = 40;
     if (Math.abs(dx) > threshold) {
       const dir = isFa ? -dx : dx;
@@ -89,7 +56,8 @@ export function NoticeBanner() {
   if (notices.length === 0) return null;
 
   const notice = notices[current];
-  const style = TYPE_STYLES[notice.type];
+  if (!notice) return null;
+  const style = TYPE_STYLES[notice.type] ?? TYPE_STYLES.info;
 
   return (
     <div
@@ -110,23 +78,28 @@ export function NoticeBanner() {
 
         {/* Text */}
         <p className="text-primary flex-1 text-xs font-medium leading-snug">
-          {isFa ? notice.textFa : notice.text}
+          {isFa ? notice.text_fa : notice.text}
         </p>
 
         {/* Pagination dots */}
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 gap-0.5">
           {notices.map((_, i) => (
             <button
               key={i}
               onClick={() => { setCurrent(i); setPaused(false); }}
-              className="rounded-full"
-              style={{
-                width: i === current ? 12 : 5,
-                height: 5,
-                background: i === current ? style.dot : "var(--separator)",
-                transition: "all 0.3s ease",
-              }}
-            />
+              className="flex items-center justify-center"
+              style={{ minWidth: 24, minHeight: 24 }}
+            >
+              <span
+                className="rounded-full"
+                style={{
+                  width: i === current ? 12 : 5,
+                  height: 5,
+                  background: i === current ? style.dot : "var(--separator)",
+                  transition: "all 0.3s ease",
+                }}
+              />
+            </button>
           ))}
         </div>
       </div>

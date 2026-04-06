@@ -15,6 +15,13 @@ import type {
   GenerateQRRequest,
   DisputeResponse,
   CouponCategory,
+  SendOTPRequest,
+  SendOTPResponse,
+  VerifyOTPRequest,
+  VerifyOTPResponse,
+  VerifyIdentityRequest,
+  VerifyIdentityResponse,
+  NoticesResponse,
 } from "../lib/types";
 
 export async function registerHousehold(
@@ -129,4 +136,32 @@ export async function returnPowerBank(swapID: number): Promise<void> {
 
 export async function cancelPowerBankSwap(swapID: number): Promise<void> {
   await api.post(`powerbank/swaps/${swapID}/cancel`);
+}
+
+// --- Notices ---
+
+export async function getNotices(): Promise<NoticesResponse> {
+  return api.get("notices").json<NoticesResponse>();
+}
+
+// --- KYC ---
+
+export async function sendOTP(
+  data: SendOTPRequest
+): Promise<SendOTPResponse> {
+  return api.post("kyc/otp/send", { json: data }).json<SendOTPResponse>();
+}
+
+export async function verifyOTP(
+  data: VerifyOTPRequest
+): Promise<VerifyOTPResponse> {
+  return api.post("kyc/otp/verify", { json: data }).json<VerifyOTPResponse>();
+}
+
+export async function verifyIdentity(
+  data: VerifyIdentityRequest
+): Promise<VerifyIdentityResponse> {
+  return api
+    .post("kyc/verify-identity", { json: data })
+    .json<VerifyIdentityResponse>();
 }

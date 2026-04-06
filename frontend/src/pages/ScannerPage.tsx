@@ -1,7 +1,10 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Html5Qrcode } from "html5-qrcode";
 import { useBalanceStore } from "../store/useBalanceStore";
+import { generateQR, redeemCoupon } from "../api/coupon";
+import { extractErrorMessage } from "../lib/api-error";
 import { IconCheck, IconWarning, CATEGORY_ICONS } from "../components/Icons";
 import { CATEGORIES } from "../lib/constants";
 import { formatAmount } from "../lib/utils";
@@ -20,78 +23,27 @@ interface ProviderQRData {
   amount: string;
   item_description: string;
   item_description_fa: string;
+  distribution_point_id: number;
 }
 
-// Mock QR payloads that simulate what a provider's app would generate
-const MOCK_QR_PAYLOADS: ProviderQRData[] = [
-  {
-    provider_id: "p-001",
-    provider_name: "Shahrvand Supermarket",
-    provider_name_fa: "فروشگاه شهروند",
-    provider_type: "Grocery Store",
-    provider_type_fa: "سوپرمارکت",
-    provider_address: "Vali-Asr Ave, Tehran",
-    provider_address_fa: "خیابان ولی‌عصر، تهران",
-    category: "food",
-    amount: "5",
-    item_description: "5 kg Rice + 2 L Oil",
-    item_description_fa: "۵ کیلو برنج + ۲ لیتر روغن",
-  },
-  {
-    provider_id: "p-002",
-    provider_name: "Darou Pakhsh Pharmacy",
-    provider_name_fa: "داروخانه دارو پخش",
-    provider_type: "Pharmacy",
-    provider_type_fa: "داروخانه",
-    provider_address: "Enghelab St, Tehran",
-    provider_address_fa: "خیابان انقلاب، تهران",
-    category: "medical",
-    amount: "1",
-    item_description: "1 First-Aid Kit",
-    item_description_fa: "۱ بسته کمک‌های اولیه",
-  },
-  {
-    provider_id: "p-003",
-    provider_name: "National Fuel Station #14",
-    provider_name_fa: "جایگاه سوخت ملی شماره ۱۴",
-    provider_type: "Fuel Station",
-    provider_type_fa: "جایگاه سوخت",
-    provider_address: "Azadi Blvd, Tehran",
-    provider_address_fa: "بلوار آزادی، تهران",
-    category: "fuel",
-    amount: "0.5",
-    item_description: "0.5 Gas Cylinder",
-    item_description_fa: "نصف کپسول گاز",
-  },
-  {
-    provider_id: "p-004",
-    provider_name: "Water Distribution Point #7",
-    provider_name_fa: "نقطه توزیع آب شماره ۷",
-    provider_type: "Government Center",
-    provider_type_fa: "مرکز دولتی",
-    provider_address: "Sadeghiyeh, Tehran",
-    provider_address_fa: "صادقیه، تهران",
-    category: "water",
-    amount: "20",
-    item_description: "20 L Drinking Water",
-    item_description_fa: "۲۰ لیتر آب آشامیدنی",
-  },
-  {
-    provider_id: "p-005",
-    provider_name: "Behdasht Store",
-    provider_name_fa: "فروشگاه بهداشت",
-    provider_type: "Hygiene Store",
-    provider_type_fa: "فروشگاه بهداشتی",
-    provider_address: "Tajrish, Tehran",
-    provider_address_fa: "تجریش، تهران",
-    category: "hygiene",
-    amount: "3",
-    item_description: "3 Soap Bars + Shampoo",
-    item_description_fa: "۳ عدد صابون + شامپو",
-  },
-];
+type Step = "scanning" | "review" | "processing" | "success" | "insufficient" | "error";
 
-type Step = "scanning" | "review" | "processing" | "success" | "insufficient";
+const MAX_QR_LENGTH = 2048;
+
+const VALID_CATEGORIES = ["water", "food", "fuel", "hygiene", "medical", "energy"];
+
+function isValidProviderQR(data: unknown): data is ProviderQRData {
+  if (typeof data !== "object" || data === null) return false;
+  const d = data as Record<string, unknown>;
+  return (
+    typeof d.provider_id === "string" &&
+    typeof d.provider_name === "string" &&
+    typeof d.category === "string" &&
+    VALID_CATEGORIES.includes(d.category as string) &&
+    typeof d.amount === "string" &&
+    typeof d.distribution_point_id === "number"
+  );
+}
 
 export function ScannerPage() {
   const { t, i18n } = useTranslation();
@@ -100,68 +52,181 @@ export function ScannerPage() {
 
   const [step, setStep] = useState<Step>("scanning");
   const [qrData, setQrData] = useState<ProviderQRData | null>(null);
-  const [scanProgress, setScanProgress] = useState(0);
   const [txCode, setTxCode] = useState("");
-  const scanTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [txTime, setTxTime] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const confirmingRef = useRef(false);
+  const cachedQRRef = useRef<{ qrData: string; category: CouponCategory; amount: string } | null>(null);
+  const scannerContainerId = "qr-reader";
 
   const { balances, fetchBalances } = useBalanceStore();
 
-  // Fetch balances on mount if not loaded
+  // Fetch balances on mount and when stale (>30s)
   useEffect(() => {
-    if (balances.length === 0) fetchBalances();
+    const STALE_MS = 30_000;
+    const { lastFetched } = useBalanceStore.getState();
+    if (balances.length === 0 || !lastFetched || Date.now() - lastFetched > STALE_MS) {
+      fetchBalances();
+    }
   }, [balances.length, fetchBalances]);
 
-  // Check if user has enough balance for the scanned category
   const checkBalance = (category: CouponCategory, amount: string): { hasBalance: boolean; available: string } => {
     const balance = balances.find((b) => b.category === category);
     if (!balance) return { hasBalance: false, available: "0" };
-    const available = parseFloat(balance.available_now);
-    return { hasBalance: available >= parseFloat(amount), available: balance.available_now };
+    const requested = Number(amount);
+    if (!Number.isFinite(requested) || requested <= 0) return { hasBalance: false, available: balance.available_now };
+    const available = Number(balance.available_now);
+    // Integer comparison to avoid floating point issues (multiply by 100)
+    const hasBalance = Math.round(available * 100) >= Math.round(requested * 100);
+    return { hasBalance, available: balance.available_now };
   };
 
-  // Scanning animation
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        const state = scannerRef.current.getState();
+        if (state === 2 /* SCANNING */) {
+          await scannerRef.current.stop();
+        }
+      } catch {
+        // already stopped
+      }
+      scannerRef.current = null;
+    }
+  }, []);
+
+  const onScanSuccess = useCallback((decodedText: string) => {
+    if (decodedText.length > MAX_QR_LENGTH) {
+      setErrorMsg(t("scanner.invalidQR"));
+      setStep("error");
+      return;
+    }
+    try {
+      const parsed = JSON.parse(decodedText);
+      if (!isValidProviderQR(parsed)) {
+        setErrorMsg(t("scanner.invalidQR"));
+        setStep("error");
+        return;
+      }
+      // Validate amount is positive
+      const amount = Number(parsed.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setErrorMsg(t("scanner.invalidQR"));
+        setStep("error");
+        return;
+      }
+      setQrData(parsed);
+      // Refresh balances before showing review
+      fetchBalances();
+      setStep("review");
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+    } catch {
+      setErrorMsg(t("scanner.invalidQR"));
+      setStep("error");
+    }
+  }, [t, fetchBalances]);
+
+  // Start camera scanner
   useEffect(() => {
     if (step !== "scanning") return;
-    setScanProgress(0);
-    scanTimer.current = setInterval(() => {
-      setScanProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(scanTimer.current!);
-          // Pick a random mock QR
-          const payload = MOCK_QR_PAYLOADS[Math.floor(Math.random() * MOCK_QR_PAYLOADS.length)];
-          setQrData(payload);
-          setStep("review");
-          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-          return 100;
-        }
-        return prev + 2;
-      });
-    }, 60);
-    return () => { if (scanTimer.current) clearInterval(scanTimer.current); };
-  }, [step]);
 
-  const handleConfirm = () => {
-    if (!qrData) return;
+    let cancelled = false;
+    const scanner = new Html5Qrcode(scannerContainerId);
+    scannerRef.current = scanner;
+
+    scanner
+      .start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          if (!cancelled) {
+            scanner.stop().catch(() => {});
+            onScanSuccess(decodedText);
+          }
+        },
+        () => {} // ignore scan errors (no QR found yet)
+      )
+      .catch(() => {
+        if (!cancelled) {
+          setErrorMsg(t("scanner.cameraError"));
+          setStep("error");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stopScanner();
+    };
+  }, [step, onScanSuccess, stopScanner, t]);
+
+  const handleConfirm = async () => {
+    if (!qrData || confirmingRef.current) return;
+    confirmingRef.current = true;
+
     const { hasBalance } = checkBalance(qrData.category, qrData.amount);
     if (!hasBalance) {
       setStep("insufficient");
+      confirmingRef.current = false;
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
       return;
     }
     setStep("processing");
-    // Simulate API call
-    setTimeout(() => {
-      setTxCode(`VC-${Math.random().toString(36).slice(2, 10).toUpperCase()}`);
+    try {
+      // Reuse cached QR if it matches (retry after partial failure)
+      let qrDataStr: string;
+      if (
+        cachedQRRef.current &&
+        cachedQRRef.current.category === qrData.category &&
+        cachedQRRef.current.amount === qrData.amount
+      ) {
+        qrDataStr = cachedQRRef.current.qrData;
+      } else {
+        const qrResponse = await generateQR({
+          category: qrData.category,
+          amount: qrData.amount,
+        });
+        qrDataStr = qrResponse.qr_data;
+        cachedQRRef.current = {
+          qrData: qrDataStr,
+          category: qrData.category,
+          amount: qrData.amount,
+        };
+      }
+
+      const redemption = await redeemCoupon(qrDataStr, qrData.distribution_point_id);
+      cachedQRRef.current = null;
+      setTxCode(redemption.coupon_code);
+      setTxTime(redemption.created_at);
       setStep("success");
-      fetchBalances(); // refresh balances after redemption
+      fetchBalances();
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-    }, 2000);
+    } catch (err) {
+      // Do NOT clear cachedQRRef — allows retry with same QR on next confirm
+      const msg = await extractErrorMessage(err, t("common.error"));
+      setErrorMsg(msg);
+      setStep("error");
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
+    } finally {
+      confirmingRef.current = false;
+    }
+  };
+
+  const handleRetry = () => {
+    setErrorMsg("");
+    confirmingRef.current = false;
+    fetchBalances();
+    setStep("review");
   };
 
   const handleReset = () => {
     setStep("scanning");
     setQrData(null);
     setTxCode("");
+    setTxTime("");
+    setErrorMsg("");
+    confirmingRef.current = false;
+    cachedQRRef.current = null;
   };
 
   const catMeta = qrData ? CATEGORIES.find((c) => c.key === qrData.category) : null;
@@ -176,50 +241,62 @@ export function ScannerPage() {
 
         <div className="glass glass-prominent overflow-hidden rounded-3xl p-1">
           <div
-            className="relative flex h-72 w-72 items-center justify-center overflow-hidden rounded-[22px]"
-            style={{ background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%)" }}
-          >
-            <div
-              className="absolute inset-x-6 h-0.5 rounded-full"
-              style={{
-                top: `${scanProgress}%`,
-                background: "linear-gradient(90deg, transparent, rgba(59,130,246,0.8), transparent)",
-                boxShadow: "0 0 20px rgba(59,130,246,0.4)",
-                transition: "top 60ms linear",
-              }}
-            />
-            <svg className="absolute inset-4" viewBox="0 0 100 100" fill="none" stroke="rgba(59,130,246,0.5)" strokeWidth="2">
-              <path d="M0,20 L0,0 L20,0" />
-              <path d="M80,0 L100,0 L100,20" />
-              <path d="M100,80 L100,100 L80,100" />
-              <path d="M20,100 L0,100 L0,80" />
-            </svg>
-            <div style={{ opacity: 0.3 }}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(59,130,246,0.6)" strokeWidth="1.5">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <rect x="7" y="7" width="4" height="4" rx="0.5" />
-                <rect x="13" y="7" width="4" height="4" rx="0.5" />
-                <rect x="7" y="13" width="4" height="4" rx="0.5" />
-              </svg>
-            </div>
-          </div>
+            id={scannerContainerId}
+            className="relative overflow-hidden rounded-[22px]"
+            style={{ width: 288, height: 288, background: "#0a0a0a" }}
+          />
         </div>
 
         <p className="text-tertiary mt-4 text-xs">
-          {isFa ? `در حال اسکن... ${Math.min(scanProgress, 99)}٪` : `Scanning... ${Math.min(scanProgress, 99)}%`}
+          {t("scanner.pointCamera")}
         </p>
       </div>
     );
   }
 
-  // ---- REVIEW (provider set the amount & product, user just confirms) ----
+  // ---- ERROR ----
+  if (step === "error") {
+    const canRetry = qrData !== null;
+    return (
+      <div className="flex flex-col items-center justify-center p-6" style={{ minHeight: "calc(100vh - 100px)" }}>
+        <div className="glass glass-prominent glass-animate flex w-full max-w-sm flex-col items-center gap-5 p-8 text-center">
+          <div
+            className="flex h-20 w-20 items-center justify-center rounded-full"
+            style={{ background: "rgba(239,68,68,0.15)", boxShadow: "0 0 40px rgba(239,68,68,0.15)" }}
+          >
+            <IconWarning size={40} color="rgb(239,68,68)" />
+          </div>
+          <div>
+            <h2 className="text-primary text-xl font-bold">{t("common.error")}</h2>
+            <p className="text-secondary mt-2 text-sm">{errorMsg}</p>
+          </div>
+          {canRetry ? (
+            <div className="flex w-full gap-3">
+              <button className="glass-btn flex-1" onClick={handleReset}>
+                {t("scanner.scanAgain")}
+              </button>
+              <button className="glass-btn glass-btn-primary flex-1" onClick={handleRetry}>
+                {t("common.retry")}
+              </button>
+            </div>
+          ) : (
+            <button className="glass-btn w-full" onClick={handleReset}>
+              {t("scanner.scanAgain")}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- REVIEW ----
   if (step === "review" && qrData && catMeta) {
     const { hasBalance, available } = checkBalance(qrData.category, qrData.amount);
 
     return (
       <div className="space-y-4 p-4">
         <h1 className="text-primary text-xl font-bold">
-          {isFa ? "بررسی دریافت" : "Review Redemption"}
+          {t("scanner.reviewTitle")}
         </h1>
 
         {/* What you're getting */}
@@ -247,15 +324,15 @@ export function ScannerPage() {
         {/* Provider info */}
         <div className="glass glass-animate space-y-2 p-4" style={{ animationDelay: "50ms" }}>
           <div className="flex justify-between">
-            <span className="text-secondary text-sm">{isFa ? "ارائه‌دهنده" : "Provider"}</span>
+            <span className="text-secondary text-sm">{t("scanner.provider")}</span>
             <span className="text-primary text-sm font-medium">{isFa ? qrData.provider_name_fa : qrData.provider_name}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-secondary text-sm">{isFa ? "نوع" : "Type"}</span>
+            <span className="text-secondary text-sm">{t("scanner.type")}</span>
             <span className="text-primary text-sm">{isFa ? qrData.provider_type_fa : qrData.provider_type}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-secondary text-sm">{isFa ? "آدرس" : "Address"}</span>
+            <span className="text-secondary text-sm">{t("scanner.address")}</span>
             <span className="text-primary text-end text-sm" style={{ maxWidth: "60%" }}>{isFa ? qrData.provider_address_fa : qrData.provider_address}</span>
           </div>
         </div>
@@ -276,10 +353,10 @@ export function ScannerPage() {
           </div>
           <div className="flex-1">
             <p className="text-primary text-sm font-medium">
-              {isFa ? "موجودی سهمیه" : "Coupon Balance"}
+              {t("scanner.couponBalance")}
             </p>
             <p className="text-secondary text-xs">
-              {isFa ? "موجود" : "Available"}: {formatAmount(available, i18n.language)} {t(catMeta.unitKey)}
+              {t("scanner.available")}: {formatAmount(available, i18n.language)} {t(catMeta.unitKey)}
             </p>
           </div>
           <span
@@ -290,8 +367,8 @@ export function ScannerPage() {
             }}
           >
             {hasBalance
-              ? (isFa ? "کافی" : "Sufficient")
-              : (isFa ? "ناکافی" : "Insufficient")
+              ? t("scanner.sufficient")
+              : t("scanner.insufficient")
             }
           </span>
         </div>
@@ -301,25 +378,23 @@ export function ScannerPage() {
           <div className="flex items-start gap-2 rounded-xl p-3" style={{ background: "rgba(234,179,8,0.1)" }}>
             <IconWarning size={16} color="rgb(234,179,8)" />
             <p className="text-xs" style={{ color: "rgb(234,179,8)" }}>
-              {isFa
-                ? "پس از تأیید، این مقدار از سهمیه شما کسر خواهد شد."
-                : "After confirmation, this amount will be deducted from your coupon balance."}
+              {t("scanner.deductionWarning")}
             </p>
           </div>
         )}
 
         <div className="flex gap-3">
           <button className="glass-btn flex-1" onClick={handleReset}>
-            {isFa ? "لغو" : "Cancel"}
+            {t("scanner.cancel")}
           </button>
           <button
             className="glass-btn glass-btn-primary flex-1"
             onClick={handleConfirm}
-            disabled={!hasBalance}
+            disabled={!hasBalance || step !== "review"}
           >
             {hasBalance
-              ? (isFa ? "تأیید دریافت" : "Confirm")
-              : (isFa ? "موجودی ناکافی" : "Insufficient")
+              ? t("scanner.confirm")
+              : t("scanner.insufficient")
             }
           </button>
         </div>
@@ -335,12 +410,22 @@ export function ScannerPage() {
           <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-white/10" style={{ borderTopColor: "var(--accent)" }} />
           <div>
             <p className="text-primary text-lg font-semibold">
-              {isFa ? "در حال پردازش..." : "Processing..."}
+              {t("scanner.processing")}
             </p>
             <p className="text-secondary mt-1 text-sm">
-              {isFa ? "لطفاً صبر کنید" : "Please wait"}
+              {t("scanner.pleaseWait")}
             </p>
           </div>
+          <button
+            className="glass-btn glass-btn-sm mt-2"
+            onClick={() => {
+              confirmingRef.current = false;
+              setErrorMsg(t("scanner.cancel"));
+              setStep("error");
+            }}
+          >
+            {t("scanner.cancel")}
+          </button>
         </div>
       </div>
     );
@@ -360,20 +445,23 @@ export function ScannerPage() {
           </div>
           <div>
             <h2 className="text-primary text-xl font-bold">
-              {isFa ? "موجودی ناکافی" : "Insufficient Balance"}
+              {t("scanner.insufficientBalance")}
             </h2>
             <p className="text-secondary mt-2 text-sm">
-              {isFa
-                ? `شما ${formatAmount(available, "fa")} ${t(catMeta.unitKey)} ${t(`category.${qrData.category}`)} دارید، اما ${qrData.amount} ${t(catMeta.unitKey)} درخواست شده است.`
-                : `You have ${formatAmount(available, "en")} ${t(catMeta.unitKey)} of ${t(`category.${qrData.category}`)}, but ${qrData.amount} ${t(catMeta.unitKey)} was requested.`}
+              {t("scanner.insufficientDesc", {
+                available: formatAmount(available, i18n.language),
+                unit: t(catMeta.unitKey),
+                category: t(`category.${qrData.category}`),
+                requested: qrData.amount,
+              })}
             </p>
           </div>
           <div className="flex w-full gap-3">
             <button className="glass-btn flex-1" onClick={handleReset}>
-              {isFa ? "اسکن مجدد" : "Scan Again"}
+              {t("scanner.scanAgain")}
             </button>
             <button className="glass-btn glass-btn-primary flex-1" onClick={() => navigate("/")}>
-              {isFa ? "مشاهده سهمیه" : "View Coupons"}
+              {t("scanner.viewCoupons")}
             </button>
           </div>
         </div>
@@ -395,43 +483,48 @@ export function ScannerPage() {
 
           <div>
             <h2 className="text-primary text-xl font-bold">
-              {isFa ? "دریافت موفق" : "Redemption Successful"}
+              {t("scanner.successTitle")}
             </h2>
             <p className="text-secondary mt-2 text-sm">
-              {isFa
-                ? `${qrData.amount} ${t(catMeta.unitKey)} ${t(`category.${qrData.category}`)} دریافت شد.`
-                : `${qrData.amount} ${t(catMeta.unitKey)} of ${t(`category.${qrData.category}`)} redeemed.`}
+              {t("scanner.successDesc", {
+                amount: qrData.amount,
+                unit: t(catMeta.unitKey),
+                category: t(`category.${qrData.category}`),
+              })}
             </p>
           </div>
 
           {/* Receipt */}
           <div className="glass-subtle w-full space-y-2 rounded-2xl p-4 text-start">
             <div className="flex justify-between">
-              <span className="text-secondary text-xs">{isFa ? "کد تراکنش" : "Transaction"}</span>
+              <span className="text-secondary text-xs">{t("scanner.transaction")}</span>
               <span className="text-primary font-mono text-xs font-bold">{txCode}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-secondary text-xs">{isFa ? "اقلام" : "Items"}</span>
+              <span className="text-secondary text-xs">{t("scanner.items")}</span>
               <span className="text-primary text-xs">{isFa ? qrData.item_description_fa : qrData.item_description}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-secondary text-xs">{isFa ? "ارائه‌دهنده" : "Provider"}</span>
+              <span className="text-secondary text-xs">{t("scanner.provider")}</span>
               <span className="text-primary text-xs">{isFa ? qrData.provider_name_fa : qrData.provider_name}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-secondary text-xs">{isFa ? "زمان" : "Time"}</span>
+              <span className="text-secondary text-xs">{t("scanner.time")}</span>
               <span className="text-primary text-xs">
-                {new Date().toLocaleTimeString(isFa ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })}
+                {txTime
+                  ? new Date(txTime).toLocaleTimeString(isFa ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })
+                  : new Date().toLocaleTimeString(isFa ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })
+                }
               </span>
             </div>
           </div>
 
           <div className="flex w-full gap-3">
             <button className="glass-btn flex-1" onClick={handleReset}>
-              {isFa ? "اسکن جدید" : "Scan Again"}
+              {t("scanner.scanAgain")}
             </button>
             <button className="glass-btn glass-btn-primary flex-1" onClick={() => navigate("/profile/history")}>
-              {isFa ? "تاریخچه" : "History"}
+              {t("scanner.history")}
             </button>
           </div>
         </div>
@@ -439,6 +532,12 @@ export function ScannerPage() {
     );
   }
 
-  // Fallback
-  return null;
+  // Fallback — inconsistent state, offer recovery
+  return (
+    <div className="flex flex-col items-center justify-center p-6" style={{ minHeight: "calc(100vh - 100px)" }}>
+      <button className="glass-btn" onClick={handleReset}>
+        {t("scanner.scanAgain")}
+      </button>
+    </div>
+  );
 }

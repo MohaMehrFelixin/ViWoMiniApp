@@ -8,14 +8,23 @@ import (
 )
 
 type Config struct {
-	Server           ServerConfig   `mapstructure:"server"`
-	Database         DatabaseConfig `mapstructure:"postgres"`
-	Redis            RedisConfig    `mapstructure:"redis"`
-	TelegramBotToken string         `mapstructure:"telegram_bot_token"`
-	SigningKeyPath   string         `mapstructure:"signing_key_path"`
-	Environment      string         `mapstructure:"environment"`
-	WorkerID         int64          `mapstructure:"worker_id"`
-	LogLevel         string         `mapstructure:"log_level"`
+	Server           ServerConfig    `mapstructure:"server"`
+	Database         DatabaseConfig  `mapstructure:"postgres"`
+	Redis            RedisConfig     `mapstructure:"redis"`
+	Finnotech        FinnotechConfig `mapstructure:"finnotech"`
+	TelegramBotToken string          `mapstructure:"telegram_bot_token"`
+	SigningKeyPath   string          `mapstructure:"signing_key_path"`
+	Environment      string          `mapstructure:"environment"`
+	WorkerID         int64           `mapstructure:"worker_id"`
+	LogLevel         string          `mapstructure:"log_level"`
+}
+
+type FinnotechConfig struct {
+	BaseURL      string `mapstructure:"base_url"`
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	RedirectURI  string `mapstructure:"redirect_uri"`
+	Enabled      bool   `mapstructure:"enabled"`
 }
 
 type ServerConfig struct {
@@ -79,6 +88,11 @@ func Load() (*Config, error) {
 	v.SetDefault("redis.port", 6379)
 	v.SetDefault("redis.password", "")
 	v.SetDefault("redis.db", 0)
+	v.SetDefault("finnotech.base_url", "https://apibeta.finnotech.ir")
+	v.SetDefault("finnotech.client_id", "")
+	v.SetDefault("finnotech.client_secret", "")
+	v.SetDefault("finnotech.redirect_uri", "")
+	v.SetDefault("finnotech.enabled", false)
 	v.SetDefault("telegram_bot_token", "")
 	v.SetDefault("signing_key_path", "keys/coupon_signing.pem")
 	v.SetDefault("environment", "development")
@@ -88,6 +102,10 @@ func Load() (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("config: failed to unmarshal: %w", err)
+	}
+
+	if cfg.TelegramBotToken == "" && cfg.Environment == "production" {
+		return nil, fmt.Errorf("config: TELEGRAM_BOT_TOKEN must be set in production")
 	}
 
 	return &cfg, nil

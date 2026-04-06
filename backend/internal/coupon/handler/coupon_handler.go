@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	appErrors "github.com/viwo-app/mini-coupon/internal/errors"
@@ -23,11 +24,13 @@ type CouponHandler struct {
 	redemptionSvc   *service.RedemptionService
 	distributionSvc *service.DistributionService
 	powerBankSvc    *service.PowerBankService
+	kycSvc          *service.KYCService
+	rdb             *redis.Client
 	logger          *zap.Logger
 }
 
-func NewCouponHandler(h *service.HouseholdService, a *service.AllocationService, r *service.RedemptionService, d *service.DistributionService, pb *service.PowerBankService, l *zap.Logger) *CouponHandler {
-	return &CouponHandler{householdSvc: h, allocationSvc: a, redemptionSvc: r, distributionSvc: d, powerBankSvc: pb, logger: l}
+func NewCouponHandler(h *service.HouseholdService, a *service.AllocationService, r *service.RedemptionService, d *service.DistributionService, pb *service.PowerBankService, kyc *service.KYCService, rdb *redis.Client, l *zap.Logger) *CouponHandler {
+	return &CouponHandler{householdSvc: h, allocationSvc: a, redemptionSvc: r, distributionSvc: d, powerBankSvc: pb, kycSvc: kyc, rdb: rdb, logger: l}
 }
 
 func (h *CouponHandler) requireTG(w http.ResponseWriter, r *http.Request) int64 {
@@ -112,10 +115,12 @@ func (h *CouponHandler) HandleGenerateQR(w http.ResponseWriter, r *http.Request)
 
 func (h *CouponHandler) HandleRedeemCoupon(w http.ResponseWriter, r *http.Request) {
 	uid := h.requireTG(w, r); if uid == 0 { return }
+	s := h.requireHousehold(w, r, uid, "redeem"); if s == nil { return }
 	var req model.RedeemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid body")); return }
 	var qr model.QRPayload
 	if err := json.Unmarshal([]byte(req.QRData), &qr); err != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid QR")); return }
+	if qr.HouseholdID != s.Household.ID { appErrors.WriteJSON(w, appErrors.ErrForbidden.WithMessage("QR does not belong to this household")); return }
 	rd, err := h.redemptionSvc.VerifyAndRedeem(r.Context(), qr, req.DistributionPointID)
 	if err != nil { httputil.HandleServiceError(w, err, h.logger, "redeem"); return }
 	httputil.WriteJSON(w, http.StatusCreated, rd)
@@ -128,7 +133,11 @@ func (h *CouponHandler) HandleGetRedemptionHistory(w http.ResponseWriter, r *htt
 	limit := 20
 	if l := r.URL.Query().Get("limit"); l != "" { if p, err := strconv.Atoi(l); err == nil && p > 0 && p <= 100 { limit = p } }
 	var cat *model.CouponCategory
-	if c := r.URL.Query().Get("category"); c != "" { cc := model.CouponCategory(strings.ToLower(c)); cat = &cc }
+	if c := r.URL.Query().Get("category"); c != "" {
+		cc := model.CouponCategory(strings.ToLower(c))
+		if !cc.IsValid() { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid category")); return }
+		cat = &cc
+	}
 	rds, nc, err := h.redemptionSvc.GetHistory(r.Context(), s.Household.ID, cat, cursor, limit)
 	if err != nil { httputil.HandleServiceError(w, err, h.logger, "history"); return }
 	httputil.WriteJSON(w, http.StatusOK, model.RedemptionHistoryResponse{Redemptions: rds, NextCursor: nc})
@@ -148,10 +157,16 @@ func (h *CouponHandler) HandleDisputeRedemption(w http.ResponseWriter, r *http.R
 func (h *CouponHandler) HandleGetNearbyCenters(w http.ResponseWriter, r *http.Request) {
 	lat, err := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
 	if err != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid lat")); return }
+	if lat < -90 || lat > 90 { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("lat must be between -90 and 90")); return }
 	lng, err := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
 	if err != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid lng")); return }
+	if lng < -180 || lng > 180 { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("lng must be between -180 and 180")); return }
 	var cat *model.CouponCategory
-	if c := r.URL.Query().Get("category"); c != "" { cc := model.CouponCategory(strings.ToLower(c)); cat = &cc }
+	if c := r.URL.Query().Get("category"); c != "" {
+		cc := model.CouponCategory(strings.ToLower(c))
+		if !cc.IsValid() { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid category")); return }
+		cat = &cc
+	}
 	centers, err := h.distributionSvc.GetNearbyWithStock(r.Context(), lat, lng, cat)
 	if err != nil { httputil.HandleServiceError(w, err, h.logger, "nearby"); return }
 	httputil.WriteJSON(w, http.StatusOK, model.NearbyDistributionCentersResponse{Centers: centers})
@@ -211,4 +226,61 @@ func (h *CouponHandler) HandleCancelSwap(w http.ResponseWriter, r *http.Request)
 	s := h.requireHousehold(w, r, uid, "cancel_swap"); if s == nil { return }
 	if err := h.powerBankSvc.CancelSwap(r.Context(), swapID, s.Household.ID); err != nil { httputil.HandleServiceError(w, err, h.logger, "cancel_swap"); return }
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"message": "Swap cancelled"})
+}
+
+// --- Notices ---
+
+func (h *CouponHandler) HandleGetNotices(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data, err := h.rdb.Get(ctx, "app:notices").Bytes()
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"notices": []interface{}{}})
+		return
+	}
+	var notices []json.RawMessage
+	if err := json.Unmarshal(data, &notices); err != nil {
+		h.logger.Warn("invalid notices JSON in Redis", zap.Error(err))
+		httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"notices": []interface{}{}})
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"notices": notices})
+}
+
+// --- KYC Handlers ---
+
+func (h *CouponHandler) HandleSendOTP(w http.ResponseWriter, r *http.Request) {
+	uid := h.requireTG(w, r); if uid == 0 { return }
+	var req model.SendOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid body")); return }
+	req.NationalCode = model.NormalizePersianDigits(req.NationalCode)
+	req.Mobile = model.NormalizePersianDigits(req.Mobile)
+	if errs := validator.ValidateStruct(req); errs != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithDetails(errs)); return }
+	result, err := h.kycSvc.SendOTP(r.Context(), req.Mobile, req.NationalCode, uid)
+	if err != nil { httputil.HandleServiceError(w, err, h.logger, "send_otp"); return }
+	httputil.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *CouponHandler) HandleVerifyOTP(w http.ResponseWriter, r *http.Request) {
+	uid := h.requireTG(w, r); if uid == 0 { return }
+	var req model.VerifyOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid body")); return }
+	req.NationalCode = model.NormalizePersianDigits(req.NationalCode)
+	req.Mobile = model.NormalizePersianDigits(req.Mobile)
+	req.OTP = model.NormalizePersianDigits(req.OTP)
+	if errs := validator.ValidateStruct(req); errs != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithDetails(errs)); return }
+	result, err := h.kycSvc.VerifyOTP(r.Context(), req.Mobile, req.NationalCode, req.OTP, req.TrackID, uid)
+	if err != nil { httputil.HandleServiceError(w, err, h.logger, "verify_otp"); return }
+	httputil.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *CouponHandler) HandleVerifyIdentity(w http.ResponseWriter, r *http.Request) {
+	uid := h.requireTG(w, r); if uid == 0 { return }
+	var req model.VerifyIdentityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("Invalid body")); return }
+	req.NationalCode = model.NormalizePersianDigits(req.NationalCode)
+	req.Mobile = model.NormalizePersianDigits(req.Mobile)
+	if errs := validator.ValidateStruct(req); errs != nil { appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithDetails(errs)); return }
+	result, err := h.kycSvc.VerifyIdentity(r.Context(), req.NationalCode, req.FullName, req.BirthDate, req.Gender, req.Mobile, req.TrackID, uid)
+	if err != nil { httputil.HandleServiceError(w, err, h.logger, "verify_identity"); return }
+	httputil.WriteJSON(w, http.StatusOK, result)
 }

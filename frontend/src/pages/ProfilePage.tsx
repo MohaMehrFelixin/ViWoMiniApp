@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useHouseholdStore } from "../store/useHouseholdStore";
@@ -14,11 +14,26 @@ import { ErrorState } from "../components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
 import type { CouponRedemption } from "../lib/types";
 import { getRedemptionHistory, disputeRedemption } from "../api/coupon";
+import { formatDate } from "../lib/utils";
 
 // ======================== PROFILE MENU (main page) ========================
 
 function BackButton({ onClick }: { onClick: () => void }) {
   const { t } = useTranslation();
+
+  // Wire Telegram's native back button
+  useEffect(() => {
+    const tgBack = window.Telegram?.WebApp?.BackButton;
+    if (tgBack) {
+      tgBack.show();
+      tgBack.onClick(onClick);
+      return () => {
+        tgBack.offClick(onClick);
+        tgBack.hide();
+      };
+    }
+  }, [onClick]);
+
   return (
     <button onClick={onClick} className="text-secondary flex items-center gap-1 text-sm">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -37,10 +52,13 @@ const MENU_ITEMS = [
 ] as const;
 
 export function ProfilePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { household, members } = useHouseholdStore();
+  const kycData = useKycStore((s) => s.data);
   const headMember = members.find((m) => m.relationship === "head");
+
+  const displayName = headMember?.full_name || kycData?.fullName || t("profile.title");
 
   return (
     <div className="space-y-4 p-4">
@@ -55,7 +73,7 @@ export function ProfilePage() {
           </div>
           <div className="flex-1">
             <p className="text-primary text-base font-semibold">
-              {headMember?.full_name || t("profile.title")}
+              {displayName}
             </p>
             {household && (
               <p className="text-tertiary font-mono text-xs">{household.household_code}</p>
@@ -85,7 +103,7 @@ export function ProfilePage() {
             <svg
               width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              style={{ transform: document.documentElement.dir === "rtl" ? "scaleX(-1)" : undefined }}
+              style={{ transform: i18n.language === "fa" ? "scaleX(-1)" : undefined }}
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
@@ -152,8 +170,9 @@ export function ProfileCollaborationPage() {
 // ======================== INFO CONTENT ========================
 
 function ProfileInfoContent() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { household, members } = useHouseholdStore();
+  const kycData = useKycStore((s) => s.data);
 
   if (!household) {
     return (
@@ -166,6 +185,12 @@ function ProfileInfoContent() {
 
   const headMember = members.find((m) => m.relationship === "head");
 
+  // Primary: backend data (headMember). Fallback: KYC store (localStorage).
+  const displayName = headMember?.full_name || kycData?.fullName || t("household.head");
+  const displayBirthDate = headMember?.birth_date || kycData?.birthDate || "";
+  const displayGender = headMember?.gender || kycData?.gender || "";
+  const displayPhone = household.phone_number || kycData?.mobile || "";
+
   return (
     <div className="space-y-3">
       <div className="glass glass-animate p-5">
@@ -174,7 +199,7 @@ function ProfileInfoContent() {
             <IconUser size={28} color="var(--cat-water)" />
           </div>
           <div className="flex-1">
-            <p className="text-primary text-base font-semibold">{headMember?.full_name || t("household.head")}</p>
+            <p className="text-primary text-base font-semibold">{displayName}</p>
             <p className="text-secondary text-xs">
               {headMember?.national_code ? `${t("household.nationalCode")}: ${headMember.national_code}` : ""}
             </p>
@@ -184,6 +209,10 @@ function ProfileInfoContent() {
 
       <div className="glass glass-animate space-y-3 p-4" style={{ animationDelay: "50ms" }}>
         <InfoRow label={t("household.householdCode")} value={household.household_code} mono />
+        {displayPhone && <InfoRow label={t("kyc.phoneTitle")} value={displayPhone} mono />}
+        {displayBirthDate && <InfoRow label={t("household.birthDate")} value={formatDate(displayBirthDate, i18n.language)} />}
+        {displayGender && <InfoRow label={t("household.gender")} value={t(`household.${displayGender}`)} />}
+        {household.address && <InfoRow label={t("household.address")} value={household.address} />}
         <InfoRow label={t("profile.status")} value={t(`profile.status_${household.status}`)} badge={household.status === "active" ? "green" : "yellow"} />
         <InfoRow label={t("profile.kycTier")} value={t(`profile.tier_${household.kyc_tier}`)} />
         <InfoRow label={t("profile.location")} value={t(`profile.segment_${household.location_segment}`)} />
@@ -212,43 +241,48 @@ function ProfileInfoContent() {
 function HistoryContent() {
   const { t } = useTranslation();
   const [redemptions, setRedemptions] = useState<CouponRedemption[]>([]);
-  const [cursor, setCursor] = useState<string>("");
+  const cursorRef = useRef<string>("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [disputeId, setDisputeId] = useState<number | null>(null);
   const [disputeReason, setDisputeReason] = useState("");
   const [disputeLoading, setDisputeLoading] = useState(false);
+  const [disputeError, setDisputeError] = useState<string | null>(null);
 
   const fetchHistory = useCallback(async (isLoadMore = false) => {
     if (isLoadMore) setLoadingMore(true);
     else setLoading(true);
     setError(null);
     try {
-      const res = await getRedemptionHistory(isLoadMore ? cursor : undefined);
+      const res = await getRedemptionHistory(isLoadMore ? cursorRef.current : undefined);
       if (isLoadMore) setRedemptions((prev) => [...prev, ...res.redemptions]);
       else setRedemptions(res.redemptions);
-      setCursor(res.next_cursor);
+      cursorRef.current = res.next_cursor;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load history");
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [cursor]);
+  }, []);
 
-  useEffect(() => { fetchHistory(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
   const handleDispute = async () => {
     if (!disputeId || disputeReason.length < 10) return;
     setDisputeLoading(true);
+    setDisputeError(null);
     try {
       await disputeRedemption(disputeId, disputeReason);
       setRedemptions((prev) => prev.map((r) => (r.id === disputeId ? { ...r, status: "disputed" } : r)));
       setDisputeId(null);
       setDisputeReason("");
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-    } catch { setError("Failed to submit dispute"); }
+    } catch {
+      setDisputeError("Failed to submit dispute");
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
+    }
     finally { setDisputeLoading(false); }
   };
 
@@ -264,18 +298,24 @@ function HistoryContent() {
         ))}
       </div>
 
-      {cursor && (
+      {cursorRef.current && (
         <button className="glass-btn glass-btn-lg" onClick={() => fetchHistory(true)} disabled={loadingMore}>
           {loadingMore ? "..." : t("history.loadMore")}
         </button>
       )}
 
+      {disputeError && (
+        <div className="glass-subtle rounded-2xl p-3 text-center text-sm" style={{ color: "var(--cat-medical)" }}>
+          {disputeError}
+        </div>
+      )}
+
       {disputeId !== null && (
         <>
-          <div className="fixed inset-0 z-50" style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }} onClick={() => { setDisputeId(null); setDisputeReason(""); }} />
-          <div className="glass glass-prominent glass-animate fixed inset-x-4 bottom-24 z-50 space-y-4 p-5">
+          <div className="fixed inset-0 z-50" style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }} onClick={() => { setDisputeId(null); setDisputeReason(""); }} aria-hidden="true" />
+          <div className="glass glass-prominent glass-animate fixed inset-x-4 bottom-24 z-50 space-y-4 p-5" role="dialog" aria-modal="true" aria-label={t("history.submitDispute")} onKeyDown={(e) => { if (e.key === "Escape") { setDisputeId(null); setDisputeReason(""); } }}>
             <h3 className="text-primary font-bold">{t("history.submitDispute")}</h3>
-            <input className="glass-input" placeholder={t("history.disputeReason")} value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} />
+            <input className="glass-input" placeholder={t("history.disputeReason")} value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} autoFocus />
             <div className="flex gap-3">
               <button className="glass-btn flex-1" onClick={() => { setDisputeId(null); setDisputeReason(""); }}>{t("common.cancel")}</button>
               <button className="glass-btn glass-btn-primary flex-1" onClick={handleDispute} disabled={disputeReason.length < 10 || disputeLoading}>
@@ -312,11 +352,13 @@ function LogoutButton() {
   const [confirming, setConfirming] = useState(false);
 
   const handleLogout = () => {
-    clearHousehold();
+    // Clear local session — backend data stays intact
+    // User re-authenticates with national code + OTP to get back in
+    clearHousehold();   // clears local cache, sets loggedOut=true
     clearBalances();
-    clearVolunteer();
-    clearDistributor();
-    resetKyc();
+    clearVolunteer();   // clear localStorage-only data
+    clearDistributor(); // clear localStorage-only data
+    resetKyc();         // sets completed=false → shows KYC login flow
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("warning");
   };
 
@@ -333,7 +375,7 @@ function LogoutButton() {
   }
 
   return (
-    <button className="glass-btn glass-btn-lg glass-animate w-full" style={{ color: "rgb(239,68,68)" }} onClick={() => setConfirming(true)}>
+    <button className="glass-btn glass-btn-lg glass-animate w-full" style={{ color: "rgb(239,68,68)" }} onClick={() => { setConfirming(true); window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("warning"); }}>
       {t("profile.logout")}
     </button>
   );

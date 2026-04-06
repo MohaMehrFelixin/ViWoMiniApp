@@ -10,8 +10,11 @@ import (
 
 func RegisterRoutes(r chi.Router, h *CouponHandler, tgAuth func(http.Handler) http.Handler, rdb *redis.Client) {
 	writeRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 5, Burst: 5})
-	qrRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 20, Burst: 20})
-	redeemRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 10, Burst: 10})
+	qrRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 3, Burst: 5})
+	redeemRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 1, Burst: 3})
+	noticeRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 5, Burst: 10})
+
+	r.With(noticeRL).Get("/notices", h.HandleGetNotices)
 
 	r.Group(func(r chi.Router) {
 		r.Use(tgAuth)
@@ -34,5 +37,11 @@ func RegisterRoutes(r chi.Router, h *CouponHandler, tgAuth func(http.Handler) ht
 		r.With(writeRL).Post("/powerbank/swaps/{id}/pickup", h.HandlePickUpSwap)
 		r.With(writeRL).Post("/powerbank/swaps/{id}/return", h.HandleReturnSwap)
 		r.With(writeRL).Post("/powerbank/swaps/{id}/cancel", h.HandleCancelSwap)
+
+		// KYC Verification
+		kycRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 3, Burst: 3})
+		r.With(kycRL).Post("/kyc/otp/send", h.HandleSendOTP)
+		r.With(kycRL).Post("/kyc/otp/verify", h.HandleVerifyOTP)
+		r.With(kycRL).Post("/kyc/verify-identity", h.HandleVerifyIdentity)
 	})
 }

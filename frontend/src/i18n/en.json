@@ -18,7 +18,23 @@
     "successDesc": "Your identity has been verified. You can now access your coupons.",
     "enterApp": "Enter App",
     "registering": "Registering...",
-    "registrationFailed": "Registration failed. Please try again."
+    "registrationFailed": "Registration failed. Please try again.",
+    "phoneTitle": "Phone Number",
+    "phoneDesc": "Enter your mobile number for SMS verification",
+    "phonePlaceholder": "09121234567",
+    "otpTitle": "Verification Code",
+    "otpDesc": "Enter the 6-digit code sent to your phone",
+    "otpPlaceholder": "______",
+    "otpResend": "Resend Code",
+    "otpExpired": "Code expired. Please resend.",
+    "otpWrong": "Wrong code. Please try again.",
+    "tooManyAttempts": "Too many attempts. Please start over.",
+    "verifying": "Verifying...",
+    "phoneVerified": "Phone verified successfully",
+    "shahkarFailed": "Phone number is not registered to this national code",
+    "nidFailed": "Identity could not be verified",
+    "sendingOtp": "Sending code...",
+    "attemptsRemaining": "attempts remaining"
   },
   "nav": {
     "home": "Home",
@@ -158,7 +174,33 @@
   },
   "scanner": {
     "title": "Scan QR",
-    "instruction": "Scan customer's QR code"
+    "instruction": "Scan customer's QR code",
+    "pointCamera": "Point your camera at the provider's QR code",
+    "cameraError": "Could not access camera. Please grant camera permission and try again.",
+    "invalidQR": "Invalid QR code. Please scan a valid provider QR code.",
+    "reviewTitle": "Review Redemption",
+    "provider": "Provider",
+    "type": "Type",
+    "address": "Address",
+    "couponBalance": "Coupon Balance",
+    "available": "Available",
+    "sufficient": "Sufficient",
+    "insufficient": "Insufficient",
+    "deductionWarning": "After confirmation, this amount will be deducted from your coupon balance.",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "processing": "Processing...",
+    "pleaseWait": "Please wait",
+    "insufficientBalance": "Insufficient Balance",
+    "insufficientDesc": "You have {{available}} {{unit}} of {{category}}, but {{requested}} {{unit}} was requested.",
+    "scanAgain": "Scan Again",
+    "viewCoupons": "View Coupons",
+    "successTitle": "Redemption Successful",
+    "successDesc": "{{amount}} {{unit}} of {{category}} redeemed.",
+    "transaction": "Transaction",
+    "items": "Items",
+    "time": "Time",
+    "history": "History"
   },
   "volunteer": {
     "title": "Volunteer",
@@ -244,6 +286,13 @@
     "confirm": "Confirm",
     "save": "Save",
     "back": "Back"
+  },
+  "food": {
+    "essentialBasket": "Essential Food Basket",
+    "monthly": "Monthly",
+    "showAll": "Show all",
+    "showLess": "Show less",
+    "regionalItems": "Regional Items"
   },
   "units": {
     "liters": "L",

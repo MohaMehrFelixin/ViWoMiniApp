@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { CategoryBalance, CouponCategory } from "../lib/types";
 import { CATEGORY_MAP, WEEKLY_SCHEDULE } from "../lib/constants";
 import { CATEGORY_ICONS } from "../components/Icons";
 import { formatAmount, calcUsagePercent } from "../lib/utils";
-import { getCategoryBalance } from "../api/coupon";
+import { getCategoryBalance, generateQR } from "../api/coupon";
+import { extractErrorMessage } from "../lib/api-error";
 import { ProgressBar } from "../components/ProgressBar";
 import { PowerBankCard } from "../components/PowerBankCard";
 import { FoodBasket } from "../components/FoodBasket";
@@ -19,6 +20,9 @@ export function CategoryDetailPage() {
   const [balance, setBalance] = useState<CategoryBalance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const generatingRef = useRef(false);
   const meta = CATEGORY_MAP[category as CouponCategory];
   const CatIcon = CATEGORY_ICONS[category as string];
   const locale = i18n.language;
@@ -45,7 +49,7 @@ export function CategoryDetailPage() {
 
   if (!meta) return <ErrorState message="Invalid category" />;
   if (loading) return <Loading />;
-  if (error) return <ErrorState message={error} />;
+  if (error) return <ErrorState message={error} onRetry={() => { setError(null); setLoading(true); getCategoryBalance(category!).then(setBalance).catch((e) => setError(e instanceof Error ? e.message : "Error")).finally(() => setLoading(false)); }} />;
   if (!balance) return <ErrorState message="No allocation found" />;
 
   const percent = calcUsagePercent(balance.used_amount, balance.total_amount);
@@ -125,6 +129,46 @@ export function CategoryDetailPage() {
           })}
         </div>
       </div>
+
+      {/* Generate QR button */}
+      <button
+        className="glass-btn glass-btn-primary glass-btn-lg w-full glass-animate"
+        style={{ animationDelay: "200ms" }}
+        disabled={generating || parseFloat(balance.available_now) <= 0}
+        onClick={async () => {
+          if (generatingRef.current) return;
+          generatingRef.current = true;
+          setGenerating(true);
+          setGenError(null);
+          try {
+            const qrData = await generateQR({
+              category: category as CouponCategory,
+              amount: balance.available_now,
+            });
+            navigate("/qr", { state: { qrData, category } });
+          } catch (err) {
+            const msg = await extractErrorMessage(err, t("common.error"));
+            setGenError(msg);
+          } finally {
+            setGenerating(false);
+            generatingRef.current = false;
+          }
+        }}
+      >
+        {generating ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            {t("common.loading")}
+          </span>
+        ) : (
+          t("category.generateQR")
+        )}
+      </button>
+      {genError && (
+        <div className="glass-subtle rounded-2xl p-3 text-center text-sm" style={{ color: "var(--cat-medical)" }}>
+          {genError}
+        </div>
+      )}
 
       {category === "food" && <FoodBasket />}
       {category === "energy" && <PowerBankCard />}

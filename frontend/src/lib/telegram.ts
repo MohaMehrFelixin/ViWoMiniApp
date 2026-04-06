@@ -271,8 +271,10 @@ export function shareStory(mediaUrl: string, text?: string) {
   tg()?.shareToStory?.(mediaUrl, { text });
 }
 
-export function openBot(path?: string) {
-  const url = path ? `https://t.me/ViWoMiniBot/${path}` : "https://t.me/ViWoMiniBot";
+export function openBot(startapp?: string) {
+  const url = startapp
+    ? `https://t.me/ViWoMiniBot/viwoapp?startapp=${startapp}`
+    : "https://t.me/ViWoMiniBot/viwoapp";
   tg()?.openTelegramLink?.(url);
 }
 

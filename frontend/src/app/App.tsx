@@ -9,7 +9,7 @@ export default function App() {
 
   // Outside Telegram and not in dev mode — redirect to the bot
   if (!window.Telegram?.WebApp?.initData && !import.meta.env.DEV) {
-    window.location.href = "https://t.me/ViWoMiniBot";
+    window.location.href = "https://t.me/ViWoMiniBot/viwoapp";
     return null;
   }
 

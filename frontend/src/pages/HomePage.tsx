@@ -55,7 +55,9 @@ export function HomePage() {
       <NoticeBanner />
 
       <div className="glass glass-animate flex items-center justify-between p-4">
-        <div>
+        <div className="flex items-center gap-3">
+          <img src="/logo.jpg" alt="ViWo" className="h-10 w-10 rounded-xl" />
+          <div>
           <h1 className="text-primary text-lg font-bold">{t("home.title")}</h1>
           <span className="text-tertiary text-xs">
             {t("home.week", { n: getWeekNumber() })}
@@ -69,6 +71,7 @@ export function HomePage() {
               </span>
             )}
           </span>
+          </div>
         </div>
         <button
           onClick={toggleLang}

@@ -7,7 +7,7 @@ import { useDistributorStore } from "../store/useDistributorStore";
 import { registerHousehold, getHousehold, sendOTP, verifyOTP, verifyIdentity } from "../api/coupon";
 import { extractErrorMessage } from "../lib/api-error";
 import type { Household } from "../lib/types";
-import { IconPackage, IconIdCard, IconUser, IconHouse, IconCheck, IconShield } from "../components/Icons";
+import { IconIdCard, IconUser, IconHouse, IconCheck, IconShield } from "../components/Icons";
 import { ShamsiDatePicker } from "../components/ShamsiDatePicker";
 
 const TOTAL_STEPS = 8;
@@ -51,15 +51,12 @@ function StepWelcome({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="glass glass-prominent glass-animate glass-shimmer flex flex-col items-center gap-6 p-8 text-center">
-      <div
-        className="flex h-20 w-20 items-center justify-center rounded-3xl text-4xl"
-        style={{
-          background: "rgba(59, 130, 246, 0.15)",
-          boxShadow: "0 0 40px rgba(59, 130, 246, 0.15)",
-        }}
-      >
-        <IconPackage size={40} />
-      </div>
+      <img
+        src="/logo.jpg"
+        alt="ViWo"
+        className="h-24 w-24 rounded-3xl"
+        style={{ boxShadow: "0 0 40px rgba(180, 255, 0, 0.2)" }}
+      />
 
       <div>
         <h1 className="text-primary text-2xl font-bold">

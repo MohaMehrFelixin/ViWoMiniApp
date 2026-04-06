@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: viwo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: viwo_coupon
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U viwo"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: deploy/Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: viwo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: viwo_coupon
+      POSTGRES_SSL_MODE: disable
+      POSTGRES_MAX_CONNS: "20"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      SIGNING_KEY_PATH: /app/keys/coupon_signing.pem
+      FINNOTECH_ENABLED: ${FINNOTECH_ENABLED:-false}
+      FINNOTECH_BASE_URL: ${FINNOTECH_BASE_URL:-}
+      FINNOTECH_CLIENT_ID: ${FINNOTECH_CLIENT_ID:-}
+      FINNOTECH_CLIENT_SECRET: ${FINNOTECH_CLIENT_SECRET:-}
+      FINNOTECH_REDIRECT_URI: ${FINNOTECH_REDIRECT_URI:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./keys:/app/keys:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE}
+    restart: always
+    ports:
+      - "127.0.0.1:3000:80"
+
+volumes:
+  pgdata:
+  redisdata:

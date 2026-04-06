@@ -1,11 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useKycStore } from "../store/useKycStore";
+import { useHouseholdStore } from "../store/useHouseholdStore";
+import { useVolunteerStore, VOLUNTEER_SPECIALTIES } from "../store/useVolunteerStore";
+import { useDistributorStore } from "../store/useDistributorStore";
 import { registerHousehold, getHousehold } from "../api/coupon";
 import type { Household } from "../lib/types";
 import { IconPackage, IconIdCard, IconUser, IconHouse, IconCheck } from "../components/Icons";
+import { ShamsiDatePicker } from "../components/ShamsiDatePicker";
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 6;
 
 // --- Step Indicator ---
 function StepDots({ current, total }: { current: number; total: number }) {
@@ -191,11 +195,9 @@ function StepPersonalInfo({
           autoFocus
           aria-label={t("household.fullName")}
         />
-        <input
-          type="date"
-          className="glass-input"
+        <ShamsiDatePicker
           value={birthDate}
-          onChange={(e) => onChangeBirthDate(e.target.value)}
+          onChange={onChangeBirthDate}
           aria-label={t("household.birthDate")}
         />
         <div>
@@ -232,62 +234,20 @@ function StepPersonalInfo({
   );
 }
 
-// --- Step 3: Address + Submit (hits real backend) ---
-function StepAddressAndSubmit({
+// --- Step 3: Address ---
+function StepAddress({
   address,
   onChange,
+  onNext,
   onBack,
-  onRegistered,
 }: {
   address: string;
   onChange: (v: string) => void;
+  onNext: () => void;
   onBack: () => void;
-  onRegistered: (household: Household) => void;
 }) {
   const { t } = useTranslation();
-  const draft = useKycStore((s) => s.draft);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const isValid = address.trim().length >= 5;
-
-  const handleSubmit = async () => {
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      // 1. Register household — backend validates Telegram initData (real auth)
-      const household = await registerHousehold({
-        national_code: draft.nationalCode ?? "",
-        address,
-        lat: 0,
-        lng: 0,
-      });
-
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-      onRegistered(household);
-    } catch (err) {
-      // Parse ky error body if possible
-      let message = t("kyc.registrationFailed");
-      if (err && typeof err === "object" && "response" in err) {
-        try {
-          const body = await (err as { response: Response }).response.json();
-          if (body?.error?.message) {
-            message = body.error.message;
-          }
-        } catch {
-          // body not parseable
-        }
-      } else if (err instanceof Error) {
-        message = err.message;
-      }
-
-      setError(message);
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   return (
     <div className="glass glass-animate space-y-5 p-6">
@@ -310,6 +270,251 @@ function StepAddressAndSubmit({
         aria-label={t("household.address")}
       />
 
+      <div className="flex gap-3">
+        <button className="glass-btn flex-1" onClick={onBack}>
+          {t("common.back")}
+        </button>
+        <button
+          className="glass-btn glass-btn-primary flex-1"
+          onClick={onNext}
+          disabled={!isValid}
+        >
+          {t("kyc.next")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Step 4: Volunteer ---
+function StepVolunteer({
+  onNext,
+  onBack,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  const { setVolunteer } = useVolunteerStore();
+  const [wants, setWants] = useState<boolean | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [custom, setCustom] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return VOLUNTEER_SPECIALTIES;
+    const q = search.toLowerCase();
+    return VOLUNTEER_SPECIALTIES.filter((s) => {
+      const label = t(`volunteer.specialty_${s}`).toLowerCase();
+      return label.includes(q) || s.includes(q);
+    });
+  }, [search, t]);
+
+  const handleNext = () => {
+    const spec = wants
+      ? selected === "__custom" ? `custom:${custom}` : selected
+      : null;
+    setVolunteer(!!wants, spec);
+    onNext();
+  };
+
+  return (
+    <div className="glass glass-animate space-y-5 p-6">
+      <div>
+        <h2 className="text-primary text-xl font-bold">{t("volunteer.title")}</h2>
+        <p className="text-secondary mt-1 text-sm">{t("volunteer.description")}</p>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setWants(true); setSelected(null); }}
+          className={`glass-btn flex-1 ${wants === true ? "glass-btn-primary" : ""}`}
+        >
+          {t("volunteer.yes")}
+        </button>
+        <button
+          onClick={() => { setWants(false); setSelected(null); setSearch(""); setCustom(""); }}
+          className={`glass-btn flex-1 ${wants === false ? "glass-btn-primary" : ""}`}
+        >
+          {t("volunteer.no")}
+        </button>
+      </div>
+
+      {wants === true && (
+        <div className="space-y-3">
+          <p className="text-secondary text-sm font-medium">{t("volunteer.pickSpecialty")}</p>
+          <input
+            className="glass-input"
+            placeholder={t("volunteer.searchSpecialty")}
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); if (selected === "__custom") setSelected(null); }}
+          />
+          <div className="max-h-48 space-y-1.5 overflow-y-auto">
+            {filtered.map((s) => (
+              <button
+                key={s}
+                onClick={() => { setSelected(s === selected ? null : s); setCustom(""); }}
+                className={`glass-btn glass-btn-sm w-full text-start ${selected === s ? "glass-btn-primary" : ""}`}
+              >
+                {t(`volunteer.specialty_${s}`)}
+              </button>
+            ))}
+            <button
+              onClick={() => setSelected(selected === "__custom" ? null : "__custom")}
+              className={`glass-btn glass-btn-sm w-full text-start ${selected === "__custom" ? "glass-btn-primary" : ""}`}
+              style={selected !== "__custom" ? { borderStyle: "dashed" } : undefined}
+            >
+              {t("volunteer.customSpecialty")}
+            </button>
+          </div>
+          {selected === "__custom" && (
+            <input
+              className="glass-input"
+              placeholder={t("volunteer.customSpecialtyPlaceholder")}
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+            />
+          )}
+          {!selected && (
+            <p className="text-tertiary text-xs">{t("volunteer.noSpecialtyHint")}</p>
+          )}
+        </div>
+      )}
+
+      {wants === false && (
+        <div className="glass-subtle rounded-xl p-3">
+          <p className="text-secondary text-sm">{t("volunteer.generalNote")}</p>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button className="glass-btn flex-1" onClick={onBack}>{t("common.back")}</button>
+        <button
+          className="glass-btn glass-btn-primary flex-1"
+          onClick={handleNext}
+          disabled={wants === null || (wants && selected === "__custom" && !custom.trim())}
+        >
+          {t("kyc.next")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Step 5: Distributor + Submit ---
+function StepDistributorAndSubmit({
+  onBack,
+  onRegistered,
+  nationalCode,
+  address,
+}: {
+  onBack: () => void;
+  onRegistered: (household: Household) => void;
+  nationalCode: string;
+  address: string;
+}) {
+  const { t } = useTranslation();
+  const { setDistributor } = useDistributorStore();
+  const [wants, setWants] = useState<boolean | null>(null);
+  const [storeAddr, setStoreAddr] = useState("");
+  const [storeDesc, setStoreDesc] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit =
+    wants !== null &&
+    (!wants || (storeAddr.trim().length > 0 && storeDesc.trim().length > 0));
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      setDistributor(!!wants, storeAddr, storeDesc);
+
+      const household = await registerHousehold({
+        national_code: nationalCode,
+        address,
+        lat: 0,
+        lng: 0,
+      });
+
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+      onRegistered(household);
+    } catch (err) {
+      let message = t("kyc.registrationFailed");
+      if (err && typeof err === "object" && "response" in err) {
+        try {
+          const body = await (err as { response: Response }).response.json();
+          if (body?.error?.message) message = body.error.message;
+        } catch { /* ignore */ }
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
+      setError(message);
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="glass glass-animate space-y-5 p-6">
+      <div>
+        <h2 className="text-primary text-xl font-bold">{t("distributor.title")}</h2>
+        <p className="text-secondary mt-1 text-sm">{t("distributor.description")}</p>
+      </div>
+
+      <div className="glass-subtle space-y-2 rounded-xl p-4">
+        <p className="text-primary text-sm font-medium">{t("distributor.incentiveTitle")}</p>
+        <ul className="text-secondary space-y-1.5 text-xs">
+          <li>• {t("distributor.incentive1")}</li>
+          <li>• {t("distributor.incentive2")}</li>
+          <li>• {t("distributor.incentive3")}</li>
+        </ul>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => setWants(true)}
+          className={`glass-btn flex-1 ${wants === true ? "glass-btn-primary" : ""}`}
+        >
+          {t("distributor.yes")}
+        </button>
+        <button
+          onClick={() => { setWants(false); setStoreAddr(""); setStoreDesc(""); }}
+          className={`glass-btn flex-1 ${wants === false ? "glass-btn-primary" : ""}`}
+        >
+          {t("distributor.no")}
+        </button>
+      </div>
+
+      {wants === true && (
+        <div className="space-y-3">
+          <input
+            className="glass-input"
+            placeholder={t("distributor.storeAddress")}
+            value={storeAddr}
+            onChange={(e) => setStoreAddr(e.target.value)}
+          />
+          <textarea
+            className="glass-input"
+            placeholder={t("distributor.storeDescription")}
+            value={storeDesc}
+            onChange={(e) => setStoreDesc(e.target.value)}
+            rows={3}
+            style={{ resize: "none" }}
+          />
+          <p className="text-tertiary text-xs">{t("distributor.pendingNote")}</p>
+        </div>
+      )}
+
+      {wants === false && (
+        <div className="glass-subtle rounded-xl p-3">
+          <p className="text-secondary text-sm">{t("distributor.skipNote")}</p>
+        </div>
+      )}
+
       {error && (
         <div
           className="glass-subtle rounded-2xl p-3 text-center text-sm"
@@ -326,13 +531,11 @@ function StepAddressAndSubmit({
         <button
           className="glass-btn glass-btn-primary flex-1"
           onClick={handleSubmit}
-          disabled={!isValid || submitting}
+          disabled={!canSubmit || submitting}
         >
           {submitting ? (
-            <span className="flex items-center gap-2">
-              <span
-                className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-              />
+            <span className="flex items-center justify-center gap-2">
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
               {t("kyc.registering")}
             </span>
           ) : (
@@ -344,7 +547,7 @@ function StepAddressAndSubmit({
   );
 }
 
-// --- Success Screen (shown after backend confirms registration) ---
+// --- Success Screen ---
 function StepSuccess({
   household,
   onEnter,
@@ -393,6 +596,7 @@ function StepSuccess({
 export function KycFlow() {
   const { currentStep, draft, setStep, updateDraft, completeKyc } = useKycStore();
   const [registeredHousehold, setRegisteredHousehold] = useState<Household | null>(null);
+  const [checking, setChecking] = useState(true);
 
   const nationalCode = draft.nationalCode ?? "";
   const fullName = draft.fullName ?? "";
@@ -409,11 +613,26 @@ export function KycFlow() {
     setStep(Math.max(0, currentStep - 1));
   }, [currentStep, setStep]);
 
-  // Check if user already has a household on the backend (e.g. cleared local storage)
+  // Check if user already has a household on the backend
+  // Skip if user explicitly logged out
+  const loggedOut = useHouseholdStore((s) => s.loggedOut);
   useEffect(() => {
+    if (loggedOut) {
+      setChecking(false);
+      return;
+    }
+
+    let cancelled = false;
     getHousehold()
       .then((res) => {
-        // Already registered on backend — skip KYC
+        if (cancelled) return;
+        // Already registered — populate store and skip KYC
+        useHouseholdStore.setState({
+          household: res.household,
+          members: res.members,
+          loggedOut: false,
+          lastFetched: Date.now(),
+        });
         completeKyc({
           nationalCode: "",
           fullName: "",
@@ -427,11 +646,24 @@ export function KycFlow() {
         });
       })
       .catch(() => {
-        // Not registered yet — continue KYC flow
+        // Not registered — show KYC flow
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
       });
-  }, [completeKyc]);
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedOut]);
 
   const handleRegistered = (household: Household) => {
+    // Populate household store so the main app has data immediately
+    useHouseholdStore.setState({
+      household,
+      members: [],
+      loggedOut: false,
+      lastFetched: Date.now(),
+    });
     setRegisteredHousehold(household);
   };
 
@@ -448,6 +680,15 @@ export function KycFlow() {
       completedAt: new Date().toISOString(),
     });
   };
+
+  // Show loading while checking backend
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="inline-block h-8 w-8 animate-spin rounded-full border-3 border-white/20 border-t-white/80" />
+      </div>
+    );
+  }
 
   // Show success screen after backend confirmed registration
   if (registeredHousehold) {
@@ -491,11 +732,27 @@ export function KycFlow() {
         );
       case 3:
         return (
-          <StepAddressAndSubmit
+          <StepAddress
             address={address}
             onChange={(v) => updateDraft({ address: v })}
+            onNext={goNext}
+            onBack={goBack}
+          />
+        );
+      case 4:
+        return (
+          <StepVolunteer
+            onNext={goNext}
+            onBack={goBack}
+          />
+        );
+      case 5:
+        return (
+          <StepDistributorAndSubmit
             onBack={goBack}
             onRegistered={handleRegistered}
+            nationalCode={nationalCode}
+            address={address}
           />
         );
       default:
@@ -505,7 +762,7 @@ export function KycFlow() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
-      {currentStep > 0 && currentStep < 4 && (
+      {currentStep > 0 && currentStep < TOTAL_STEPS && (
         <div className="mb-6 w-full max-w-sm">
           <StepDots current={currentStep} total={TOTAL_STEPS} />
         </div>

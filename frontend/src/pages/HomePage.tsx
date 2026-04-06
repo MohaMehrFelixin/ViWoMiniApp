@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useHouseholdStore } from "../store/useHouseholdStore";
 import { useBalanceStore } from "../store/useBalanceStore";
@@ -7,12 +6,12 @@ import { CategoryCard } from "../components/CategoryCard";
 import { Loading } from "../components/Loading";
 import { ErrorState } from "../components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
-import { IconHouse, IconEmpty } from "../components/Icons";
+import { IconEmpty } from "../components/Icons";
+import { NoticeBanner } from "../components/NoticeBanner";
 import { getWeekNumber } from "../lib/utils";
 
 export function HomePage() {
   const { t, i18n } = useTranslation();
-  const navigate = useNavigate();
   const { household, fetchHousehold, loading: hhLoading } = useHouseholdStore();
   const {
     balances,
@@ -38,23 +37,6 @@ export function HomePage() {
   if (error && balances.length === 0)
     return <ErrorState message={error} onRetry={fetchBalances} />;
 
-  if (!household) {
-    return (
-      <EmptyState
-        icon={<IconHouse size={48} />}
-        title={t("home.registerFirst")}
-        action={
-          <button
-            className="glass-btn glass-btn-primary"
-            onClick={() => navigate("/profile")}
-          >
-            {t("household.register")}
-          </button>
-        }
-      />
-    );
-  }
-
   if (balances.length === 0) {
     return (
       <EmptyState icon={<IconEmpty size={48} />} title={t("home.noAllocations")} />
@@ -70,6 +52,8 @@ export function HomePage() {
 
   return (
     <div className="space-y-4 p-4">
+      <NoticeBanner />
+
       <div className="glass glass-animate flex items-center justify-between p-4">
         <div>
           <h1 className="text-primary text-lg font-bold">{t("home.title")}</h1>
@@ -95,7 +79,7 @@ export function HomePage() {
         </button>
       </div>
 
-      <div className="glass-stagger space-y-3">
+      <div className="glass-stagger grid grid-cols-2 gap-3">
         {Object.values(
           balances.reduce<Record<string, typeof balances[0]>>((acc, b) => {
             if (!acc[b.category]) acc[b.category] = b;

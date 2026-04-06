@@ -5,9 +5,10 @@ import type { CategoryBalance, CouponCategory } from "../lib/types";
 import { CATEGORY_MAP, WEEKLY_SCHEDULE } from "../lib/constants";
 import { CATEGORY_ICONS } from "../components/Icons";
 import { formatAmount, calcUsagePercent } from "../lib/utils";
-import { getCategoryBalance, generateQR } from "../api/coupon";
+import { getCategoryBalance } from "../api/coupon";
 import { ProgressBar } from "../components/ProgressBar";
 import { PowerBankCard } from "../components/PowerBankCard";
+import { FoodBasket } from "../components/FoodBasket";
 import { Loading } from "../components/Loading";
 import { ErrorState } from "../components/ErrorState";
 
@@ -18,9 +19,6 @@ export function CategoryDetailPage() {
   const [balance, setBalance] = useState<CategoryBalance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [amount, setAmount] = useState("");
-  const [generating, setGenerating] = useState(false);
-
   const meta = CATEGORY_MAP[category as CouponCategory];
   const CatIcon = CATEGORY_ICONS[category as string];
   const locale = i18n.language;
@@ -51,19 +49,6 @@ export function CategoryDetailPage() {
   if (!balance) return <ErrorState message="No allocation found" />;
 
   const percent = calcUsagePercent(balance.used_amount, balance.total_amount);
-
-  const handleGenerateQR = async () => {
-    if (!amount || parseFloat(amount) <= 0) return;
-    setGenerating(true);
-    try {
-      const res = await generateQR({ category: balance.category, amount });
-      navigate("/qr", { state: { qrData: res, category: balance.category } });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "QR generation failed");
-    } finally {
-      setGenerating(false);
-    }
-  };
 
   return (
     <div className="space-y-4 p-4">
@@ -141,29 +126,8 @@ export function CategoryDetailPage() {
         </div>
       </div>
 
+      {category === "food" && <FoodBasket />}
       {category === "energy" && <PowerBankCard />}
-
-      <div className="glass glass-animate space-y-4 p-4" style={{ animationDelay: "200ms" }}>
-        <h2 className="text-primary font-semibold">
-          {t("category.generateQR")}
-        </h2>
-        <input
-          type="number"
-          className="glass-input"
-          placeholder={t("category.enterAmount")}
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          inputMode="decimal"
-          aria-label={t("category.enterAmount")}
-        />
-        <button
-          className="glass-btn glass-btn-primary glass-btn-lg"
-          onClick={handleGenerateQR}
-          disabled={!amount || parseFloat(amount) <= 0 || generating}
-        >
-          {generating ? "..." : t("category.generateQR")}
-        </button>
-      </div>
     </div>
   );
 }

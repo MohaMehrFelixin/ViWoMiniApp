@@ -170,9 +170,8 @@ export function MapPage() {
       <div
         className="absolute inset-x-0 z-[999] transition-all duration-300 ease-out"
         style={{
-          bottom: sheetOpen && selected ? "90px" : "90px",
-          transform: sheetOpen && selected ? "translateY(0)" : "translateY(0)",
-          maxHeight: "calc(100vh - 160px)",
+          bottom: "90px",
+          maxHeight: sheetOpen && selected ? "calc(100vh - 160px)" : "180px",
           padding: "0 12px",
         }}
       >

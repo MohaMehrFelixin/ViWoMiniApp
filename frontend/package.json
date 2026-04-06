@@ -12,6 +12,7 @@
     "@telegram-apps/sdk-react": "^2.0.0",
     "@telegram-apps/telegram-ui": "^2.1.0",
     "i18next": "^24.2.2",
+    "jalaali-js": "^1.2.8",
     "ky": "^1.7.5",
     "leaflet": "^1.9.4",
     "qrcode.react": "^4.2.0",

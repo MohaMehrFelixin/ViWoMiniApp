@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useHouseholdStore } from "../store/useHouseholdStore";
 import { MemberCard } from "../components/MemberCard";
+import { ShamsiDatePicker } from "../components/ShamsiDatePicker";
 import { Loading } from "../components/Loading";
 import { ErrorState } from "../components/ErrorState";
+import { EmptyState } from "../components/EmptyState";
+import { IconUser } from "../components/Icons";
 
-type FormMode = "idle" | "register" | "addMember";
+type FormMode = "idle" | "addMember";
 
 export function HouseholdTab() {
   const { t } = useTranslation();
@@ -15,15 +18,11 @@ export function HouseholdTab() {
     loading,
     error,
     fetchHousehold,
-    register,
     addMember,
   } = useHouseholdStore();
 
   const [formMode, setFormMode] = useState<FormMode>("idle");
   const [formError, setFormError] = useState<string | null>(null);
-
-  const [nationalCode, setNationalCode] = useState("");
-  const [address, setAddress] = useState("");
 
   const [mNationalCode, setMNationalCode] = useState("");
   const [mFullName, setMFullName] = useState("");
@@ -35,18 +34,6 @@ export function HouseholdTab() {
   useEffect(() => {
     fetchHousehold();
   }, [fetchHousehold]);
-
-  const handleRegister = async () => {
-    if (!nationalCode || !address) return;
-    setFormError(null);
-    try {
-      await register(nationalCode, address, 0, 0);
-      setFormMode("idle");
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Registration failed");
-    }
-  };
 
   const handleAddMember = async () => {
     if (!mNationalCode || !mFullName || !mBirthDate) return;
@@ -80,40 +67,12 @@ export function HouseholdTab() {
   if (loading && !household) return <Loading />;
   if (error && !household) return <ErrorState message={error} onRetry={fetchHousehold} />;
 
-  // Registration form
   if (!household) {
     return (
-      <div className="space-y-4">
-        <div className="glass glass-animate space-y-4 p-5">
-          <h2 className="text-primary font-semibold">{t("household.register")}</h2>
-          <input
-            className="glass-input"
-            placeholder={t("household.nationalCode")}
-            value={nationalCode}
-            onChange={(e) => setNationalCode(e.target.value)}
-            inputMode="numeric"
-            maxLength={10}
-            aria-label={t("household.nationalCode")}
-          />
-          <input
-            className="glass-input"
-            placeholder={t("household.address")}
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            aria-label={t("household.address")}
-          />
-          {formError && (
-            <p className="text-sm" style={{ color: "var(--cat-medical)" }}>{formError}</p>
-          )}
-          <button
-            className="glass-btn glass-btn-primary glass-btn-lg"
-            onClick={handleRegister}
-            disabled={!nationalCode || !address || loading}
-          >
-            {loading ? "..." : t("household.submitRegister")}
-          </button>
-        </div>
-      </div>
+      <EmptyState
+        icon={<IconUser size={48} />}
+        title={t("home.registerFirst")}
+      />
     );
   }
 
@@ -159,11 +118,9 @@ export function HouseholdTab() {
             onChange={(e) => setMFullName(e.target.value)}
             aria-label={t("household.fullName")}
           />
-          <input
-            type="date"
-            className="glass-input"
+          <ShamsiDatePicker
             value={mBirthDate}
-            onChange={(e) => setMBirthDate(e.target.value)}
+            onChange={setMBirthDate}
             aria-label={t("household.birthDate")}
           />
 
@@ -207,9 +164,7 @@ export function HouseholdTab() {
                     key={f}
                     onClick={() => toggleFlag(f)}
                     className={`glass-btn glass-btn-sm ${
-                      mFlags.includes(f)
-                        ? "glass-btn-primary"
-                        : ""
+                      mFlags.includes(f) ? "glass-btn-primary" : ""
                     }`}
                     style={
                       mFlags.includes(f)
@@ -257,7 +212,7 @@ export function HouseholdTab() {
   );
 }
 
-// Keep backward compat — old route still works
+// Keep backward compat
 export function HouseholdPage() {
   return (
     <div className="p-4 space-y-4">

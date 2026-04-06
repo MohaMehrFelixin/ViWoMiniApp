@@ -9,6 +9,7 @@ interface HouseholdState {
   loading: boolean;
   error: string | null;
   lastFetched: number | null;
+  loggedOut: boolean;
 
   fetchHousehold: () => Promise<void>;
   fetchMembers: () => Promise<void>;
@@ -32,8 +33,10 @@ export const useHouseholdStore = create<HouseholdState>()(
       loading: false,
       error: null,
       lastFetched: null,
+      loggedOut: false,
 
       fetchHousehold: async () => {
+        if (get().loggedOut) return;
         set({ loading: true, error: null });
         try {
           const res = await couponApi.getHousehold();
@@ -60,7 +63,7 @@ export const useHouseholdStore = create<HouseholdState>()(
       },
 
       register: async (nationalCode, address, lat, lng) => {
-        set({ loading: true, error: null });
+        set({ loading: true, error: null, loggedOut: false });
         try {
           const household = await couponApi.registerHousehold({
             national_code: nationalCode,
@@ -99,6 +102,7 @@ export const useHouseholdStore = create<HouseholdState>()(
           loading: false,
           error: null,
           lastFetched: null,
+          loggedOut: true,
         }),
     }),
     {
@@ -107,6 +111,7 @@ export const useHouseholdStore = create<HouseholdState>()(
         household: state.household,
         members: state.members,
         lastFetched: state.lastFetched,
+        loggedOut: state.loggedOut,
       }),
     }
   )

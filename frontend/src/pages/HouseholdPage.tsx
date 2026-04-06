@@ -7,7 +7,7 @@ import { ErrorState } from "../components/ErrorState";
 
 type FormMode = "idle" | "register" | "addMember";
 
-export function HouseholdPage() {
+export function HouseholdTab() {
   const { t } = useTranslation();
   const {
     household,
@@ -83,9 +83,9 @@ export function HouseholdPage() {
   // Registration form
   if (!household) {
     return (
-      <div className="space-y-4 p-4">
-        <h1 className="text-primary text-xl font-bold">{t("household.register")}</h1>
+      <div className="space-y-4">
         <div className="glass glass-animate space-y-4 p-5">
+          <h2 className="text-primary font-semibold">{t("household.register")}</h2>
           <input
             className="glass-input"
             placeholder={t("household.nationalCode")}
@@ -118,9 +118,7 @@ export function HouseholdPage() {
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <h1 className="text-primary text-xl font-bold">{t("household.title")}</h1>
-
+    <div className="space-y-4">
       {/* Household Code */}
       <div className="glass glass-animate flex items-center justify-between p-4">
         <span className="text-secondary text-sm">{t("household.householdCode")}</span>
@@ -255,6 +253,15 @@ export function HouseholdPage() {
           {t("household.addMember")}
         </button>
       )}
+    </div>
+  );
+}
+
+// Keep backward compat — old route still works
+export function HouseholdPage() {
+  return (
+    <div className="p-4 space-y-4">
+      <HouseholdTab />
     </div>
   );
 }

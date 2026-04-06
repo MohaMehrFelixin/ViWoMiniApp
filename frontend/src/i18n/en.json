@@ -22,9 +22,30 @@
   },
   "nav": {
     "home": "Home",
-    "household": "Family",
+    "profile": "Profile",
     "history": "History",
     "map": "Centers"
+  },
+  "profile": {
+    "title": "Profile",
+    "info": "Info",
+    "household": "Household",
+    "status": "Status",
+    "status_active": "Active",
+    "status_suspended": "Suspended",
+    "status_pending": "Pending",
+    "kycTier": "KYC Tier",
+    "tier_1": "Digital",
+    "tier_2": "Semi-Offline",
+    "tier_3": "Offline",
+    "kycDesc_1": "Full digital verification — 100% allocation",
+    "kycDesc_2": "Semi-offline verification — 85% allocation",
+    "kycDesc_3": "Offline verification — 70% allocation",
+    "location": "Region",
+    "segment_tehran": "Tehran",
+    "segment_urban": "Urban",
+    "segment_rural": "Rural",
+    "members": "Members"
   },
   "home": {
     "title": "My Coupons",

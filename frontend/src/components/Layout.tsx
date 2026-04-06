@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { IconHome, IconFamily, IconHistory, IconMapPin } from "./Icons";
+import { IconHome, IconUser, IconHistory, IconMapPin } from "./Icons";
 
 const TABS = [
   { path: "/", Icon: IconHome, labelKey: "nav.home" },
-  { path: "/household", Icon: IconFamily, labelKey: "nav.household" },
-  { path: "/history", Icon: IconHistory, labelKey: "nav.history" },
   { path: "/map", Icon: IconMapPin, labelKey: "nav.map" },
+  { path: "/history", Icon: IconHistory, labelKey: "nav.history" },
+  { path: "/profile", Icon: IconUser, labelKey: "nav.profile" },
 ] as const;
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -22,8 +22,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const isMap = location.pathname === "/map";
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <main className={hideTabbar ? "flex-1" : isMap ? "flex-1" : "flex-1 pb-24"}>
+    <div className={isMap ? "h-dvh flex flex-col overflow-hidden" : "flex min-h-screen flex-col"}>
+      <main className={hideTabbar ? "flex-1" : isMap ? "flex-1 min-h-0" : "flex-1 pb-24"}>
         {children}
       </main>
 

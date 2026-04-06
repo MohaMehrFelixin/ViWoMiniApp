@@ -46,7 +46,7 @@ export function HomePage() {
         action={
           <button
             className="glass-btn glass-btn-primary"
-            onClick={() => navigate("/household")}
+            onClick={() => navigate("/profile")}
           >
             {t("household.register")}
           </button>

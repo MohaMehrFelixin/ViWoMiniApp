@@ -75,7 +75,7 @@ func main() {
 	powerBankSvc := service.NewPowerBankService(powerBankRepo, householdRepo, idGen, logger)
 
 	handler := couponHandler.NewCouponHandler(householdSvc, allocationSvc, redemptionSvc, distributionSvc, powerBankSvc, logger)
-	tgAuth := middleware.TelegramAuth(cfg.TelegramBotToken)
+	tgAuth := middleware.TelegramAuth(cfg.TelegramBotToken, cfg.Environment)
 
 	r := chi.NewRouter()
 	r.Use(middleware.CORS())

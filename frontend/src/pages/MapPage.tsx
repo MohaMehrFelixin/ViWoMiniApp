@@ -126,7 +126,7 @@ export function MapPage() {
   };
 
   return (
-    <div className="relative w-full overflow-hidden" style={{ height: "100vh" }}>
+    <div className="relative h-full w-full overflow-hidden">
       {/* Full-screen map */}
       <MapContainer
         center={[mapCenter.lat, mapCenter.lng]}

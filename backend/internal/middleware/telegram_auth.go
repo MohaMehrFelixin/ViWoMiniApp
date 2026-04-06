@@ -36,10 +36,22 @@ type telegramUser struct {
 
 // TelegramAuth returns middleware that validates Telegram Mini App initData.
 // The initData is passed in the Authorization header as "tma <initData>".
-func TelegramAuth(botToken string) func(http.Handler) http.Handler {
+// In development mode, requests without valid auth fall back to a fixed dev user ID.
+func TelegramAuth(botToken string, environment ...string) func(http.Handler) http.Handler {
+	isDev := len(environment) > 0 && environment[0] == "development"
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
+
+			// Dev bypass: if no auth header in development mode, use a fixed user ID.
+			if authHeader == "" && isDev {
+				const devUserID int64 = 123456789
+				ctx := context.WithValue(r.Context(), TelegramUserIDKey, devUserID)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+
 			if authHeader == "" {
 				appErrors.WriteJSON(w, appErrors.ErrUnauthorized)
 				return
@@ -55,6 +67,13 @@ func TelegramAuth(botToken string) func(http.Handler) http.Handler {
 
 			userID, err := validateInitData(initData, botToken)
 			if err != nil {
+				// In dev mode, fall back to dev user if Telegram validation fails.
+				if isDev {
+					const devUserID int64 = 123456789
+					ctx := context.WithValue(r.Context(), TelegramUserIDKey, devUserID)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
 				appErrors.WriteJSON(w, appErrors.ErrUnauthorized.WithMessage(err.Error()))
 				return
 			}

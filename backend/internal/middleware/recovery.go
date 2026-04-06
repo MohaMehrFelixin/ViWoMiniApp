@@ -1,0 +1,28 @@
+package middleware
+
+import (
+	"net/http"
+	"runtime/debug"
+
+	"go.uber.org/zap"
+
+	appErrors "github.com/viwo-app/mini-coupon/internal/errors"
+)
+
+func Recovery(logger *zap.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					logger.Error("panic recovered",
+						zap.Any("error", rec),
+						zap.String("stack", string(debug.Stack())),
+						zap.String("path", r.URL.Path),
+					)
+					appErrors.WriteJSON(w, appErrors.ErrInternalServer)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
+}

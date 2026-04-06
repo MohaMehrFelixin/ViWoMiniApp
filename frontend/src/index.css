@@ -1,0 +1,254 @@
+@import url("https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* === Light Mode (default) === */
+    --page-bg: #F2F2F7;
+    --card-bg: rgba(255, 255, 255, 0.72);
+    --card-bg-hover: rgba(255, 255, 255, 0.85);
+    --card-border: rgba(0, 0, 0, 0.06);
+    --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0.5px 1px rgba(0, 0, 0, 0.04);
+    --card-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+    --card-inset: inset 0 0.5px 0 rgba(255, 255, 255, 0.8);
+    --blur: 24px;
+    --saturate: saturate(190%);
+    --text-1: rgba(0, 0, 0, 0.88);
+    --text-2: rgba(0, 0, 0, 0.52);
+    --text-3: rgba(0, 0, 0, 0.3);
+    --separator: rgba(0, 0, 0, 0.08);
+    --tab-bg: rgba(255, 255, 255, 0.8);
+    --tab-active-bg: rgba(0, 0, 0, 0.06);
+    --radius: 16px;
+    --radius-lg: 22px;
+    --accent: #007AFF;
+  }
+
+  .dark {
+    --page-bg: #000000;
+    --card-bg: rgba(255, 255, 255, 0.08);
+    --card-bg-hover: rgba(255, 255, 255, 0.13);
+    --card-border: rgba(255, 255, 255, 0.08);
+    --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0.5px 1px rgba(0, 0, 0, 0.2);
+    --card-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+    --card-inset: inset 0 0.5px 0 rgba(255, 255, 255, 0.1);
+    --text-1: rgba(255, 255, 255, 0.92);
+    --text-2: rgba(255, 255, 255, 0.55);
+    --text-3: rgba(255, 255, 255, 0.3);
+    --separator: rgba(255, 255, 255, 0.08);
+    --tab-bg: rgba(255, 255, 255, 0.1);
+    --tab-active-bg: rgba(255, 255, 255, 0.15);
+    --accent: #0A84FF;
+  }
+
+  html {
+    font-family: "Vazirmatn", -apple-system, system-ui, sans-serif;
+    color: var(--text-1);
+    background: var(--page-bg);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  * { box-sizing: border-box; }
+}
+
+@layer components {
+
+  /* ====================== GLASS CARD ====================== */
+  .glass {
+    background: var(--card-bg);
+    backdrop-filter: blur(var(--blur)) var(--saturate);
+    -webkit-backdrop-filter: blur(var(--blur)) var(--saturate);
+    border: 0.5px solid var(--card-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow), var(--card-inset);
+    transition: transform 0.2s ease, background 0.2s ease;
+  }
+
+  .glass-interactive {
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .glass-interactive:active {
+    transform: scale(0.98);
+    background: var(--card-bg-hover);
+    transition-duration: 0.08s;
+  }
+
+  /* ====================== FLOATING TAB BAR (iOS 26 style) ====================== */
+  .glass-tabbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px;
+    margin: 0 auto;
+    background: var(--tab-bg);
+    backdrop-filter: blur(40px) var(--saturate);
+    -webkit-backdrop-filter: blur(40px) var(--saturate);
+    border: 0.5px solid var(--card-border);
+    border-radius: 999px;
+    box-shadow: var(--card-shadow-lg);
+  }
+
+  .glass-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 0;
+    border-radius: 999px;
+    color: var(--text-3);
+    font-size: 10px;
+    font-weight: 500;
+    transition: all 0.25s ease;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .glass-tab:active {
+    transform: scale(0.92);
+    transition-duration: 0.08s;
+  }
+  .glass-tab-active {
+    color: var(--text-1);
+    background: var(--tab-active-bg);
+  }
+
+  /* ====================== BUTTON ====================== */
+  .glass-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 20px;
+    font-weight: 600;
+    font-size: 15px;
+    background: var(--card-bg);
+    backdrop-filter: blur(12px) var(--saturate);
+    -webkit-backdrop-filter: blur(12px) var(--saturate);
+    border: 0.5px solid var(--card-border);
+    border-radius: 999px;
+    box-shadow: var(--card-shadow);
+    color: var(--text-1);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .glass-btn:active {
+    transform: scale(0.96);
+    transition-duration: 0.08s;
+  }
+  .glass-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .glass-btn-primary {
+    background: var(--accent);
+    border-color: transparent;
+    color: #fff;
+  }
+  .glass-btn-primary:active {
+    opacity: 0.85;
+  }
+
+  .glass-btn-sm {
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+
+  .glass-btn-lg {
+    padding: 14px 24px;
+    font-size: 16px;
+    width: 100%;
+  }
+
+  /* ====================== INPUT ====================== */
+  .glass-input {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 0.5px solid var(--card-border);
+    border-radius: 12px;
+    color: var(--text-1);
+    font-family: inherit;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .glass-input::placeholder { color: var(--text-3); }
+  .glass-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+  }
+
+  /* ====================== CATEGORY TINTS ====================== */
+  .glass-tint-water   { border-color: rgba(59, 130, 246, 0.15); }
+  .glass-tint-food    { border-color: rgba(34, 197, 94, 0.15); }
+  .glass-tint-fuel    { border-color: rgba(249, 115, 22, 0.15); }
+  .glass-tint-hygiene { border-color: rgba(168, 85, 247, 0.15); }
+  .glass-tint-medical { border-color: rgba(239, 68, 68, 0.15); }
+  .glass-tint-energy  { border-color: rgba(234, 179, 8, 0.15); }
+
+  /* ====================== ENTRY ANIMATION ====================== */
+  @keyframes glass-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .glass-animate {
+    animation: glass-in 0.35s ease both;
+  }
+  .glass-stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .glass-stagger > *:nth-child(2) { animation-delay: 40ms; }
+  .glass-stagger > *:nth-child(3) { animation-delay: 80ms; }
+  .glass-stagger > *:nth-child(4) { animation-delay: 120ms; }
+  .glass-stagger > *:nth-child(5) { animation-delay: 160ms; }
+  .glass-stagger > *:nth-child(6) { animation-delay: 200ms; }
+
+  /* Glass shimmer — disabled */
+  .glass-shimmer { position: relative; overflow: hidden; }
+
+  /* Glass "prominent" variant — for modals, QR cards */
+  .glass-prominent {
+    background: var(--card-bg-hover);
+    box-shadow: var(--card-shadow-lg), var(--card-inset);
+  }
+
+  /* Glass subtle — inset elements inside cards */
+  .glass-subtle {
+    background: rgba(128, 128, 128, 0.06);
+    border: 0.5px solid var(--separator);
+    border-radius: var(--radius);
+  }
+
+  /* ====================== TEXT UTILITIES ====================== */
+  .text-primary   { color: var(--text-1); }
+  .text-secondary { color: var(--text-2); }
+  .text-tertiary  { color: var(--text-3); }
+
+  /* ====================== ACCESSIBILITY ====================== */
+  @media (prefers-reduced-motion: reduce) {
+    .glass, .glass-btn, .glass-interactive, .glass-tab, .glass-input {
+      transition: none !important;
+    }
+    .glass-animate { animation: none !important; }
+    .glass-shimmer::after { animation: none !important; }
+  }
+}

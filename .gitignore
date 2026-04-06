@@ -1,0 +1,29 @@
+# Docs
+Docs/
+
+# Claude
+.claude/
+
+# OS
+.DS_Store
+
+# Backend
+backend/tmp/
+backend/*.exe
+backend/*.pem
+backend/keys/
+backend/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

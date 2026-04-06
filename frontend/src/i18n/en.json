@@ -1,0 +1,160 @@
+{
+  "app": {
+    "title": "ViWo Coupon"
+  },
+  "kyc": {
+    "welcomeDesc": "Digital coupon system for essential supplies distribution. Complete identity verification to get started.",
+    "getStarted": "Get Started",
+    "next": "Next",
+    "nationalCodeTitle": "National Code",
+    "nationalCodeDesc": "Enter your 10-digit national code (Melli Code)",
+    "personalInfoTitle": "Personal Information",
+    "personalInfoDesc": "Enter your full name and date of birth",
+    "addressTitle": "Home Address",
+    "addressDesc": "Enter your exact residential address",
+    "verifyingTitle": "Verifying Identity",
+    "verifyingDesc": "Your information is being verified...",
+    "successTitle": "Verification Successful",
+    "successDesc": "Your identity has been verified. You can now access your coupons.",
+    "enterApp": "Enter App",
+    "registering": "Registering...",
+    "registrationFailed": "Registration failed. Please try again."
+  },
+  "nav": {
+    "home": "Home",
+    "household": "Family",
+    "history": "History",
+    "map": "Centers"
+  },
+  "home": {
+    "title": "My Coupons",
+    "week": "Week {{n}}",
+    "available": "Available",
+    "remaining": "Remaining",
+    "total": "Total",
+    "used": "Used",
+    "noAllocations": "No allocations yet",
+    "registerFirst": "Register your household first"
+  },
+  "category": {
+    "water": "Water",
+    "food": "Food",
+    "fuel": "Fuel",
+    "hygiene": "Hygiene",
+    "medical": "Medical",
+    "energy": "Energy",
+    "generateQR": "Generate QR Code",
+    "enterAmount": "Enter amount",
+    "weeklySchedule": "Weekly Schedule"
+  },
+  "qr": {
+    "title": "QR Code",
+    "scanToPay": "Show this to the vendor to receive goods",
+    "expiresIn": "Expires in",
+    "expired": "Expired",
+    "amount": "Amount",
+    "couponCode": "Coupon Code",
+    "generateNew": "Generate New Code"
+  },
+  "household": {
+    "title": "Household",
+    "register": "Register Household",
+    "nationalCode": "National Code",
+    "address": "Address",
+    "addMember": "Add Member",
+    "fullName": "Full Name",
+    "birthDate": "Birth Date",
+    "gender": "Gender",
+    "male": "Male",
+    "female": "Female",
+    "other": "Other",
+    "relationship": "Relationship",
+    "head": "Head",
+    "spouse": "Spouse",
+    "child": "Child",
+    "parent": "Parent",
+    "specialFlags": "Special Conditions",
+    "pregnant": "Pregnant",
+    "chronic": "Chronic Illness",
+    "disability": "Disability",
+    "newborn": "Newborn",
+    "sanitary": "Sanitary",
+    "members": "Household Members",
+    "kyc": "Identity Verification",
+    "kycVerified": "Verified",
+    "kycPending": "Pending",
+    "householdCode": "Household Code",
+    "submitRegister": "Register",
+    "submitMember": "Add"
+  },
+  "history": {
+    "title": "Redemption History",
+    "noHistory": "No redemptions yet",
+    "dispute": "Dispute",
+    "disputed": "Disputed",
+    "completed": "Completed",
+    "loadMore": "Load More",
+    "disputeReason": "Reason for dispute",
+    "submitDispute": "Submit Dispute"
+  },
+  "map": {
+    "title": "Distribution Centers",
+    "noCenters": "No centers found nearby",
+    "open": "Open",
+    "closed": "Closed",
+    "lowStock": "Low Stock",
+    "outOfStock": "Out of Stock",
+    "waitTime": "Wait time",
+    "minutes": "min",
+    "hours": "Hours",
+    "locationNeeded": "Enable location to find nearby centers",
+    "directions": "Directions",
+    "typeGov": "Government",
+    "typePrivate": "Private",
+    "typeMobile": "Mobile"
+  },
+  "powerbank": {
+    "title": "Power Bank",
+    "subtitle": "Swap your empty power bank for a fully charged one",
+    "headOnly": "Head of Household Only",
+    "request": "Request Swap",
+    "requesting": "Requesting...",
+    "swapCode": "Swap Code",
+    "pickup": "I Picked It Up",
+    "return": "I Returned It",
+    "cancel": "Cancel Request",
+    "statusPending": "Pending",
+    "statusReady": "Ready for Pickup",
+    "statusPickedUp": "Picked Up",
+    "statusReturned": "Returned",
+    "statusCancelled": "Cancelled",
+    "bringEmpty": "Bring your empty power bank to a distribution center and swap it for a charged one",
+    "noHistory": "No swaps yet"
+  },
+  "scanner": {
+    "title": "Scan QR",
+    "instruction": "Scan customer's QR code"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "back": "Back"
+  },
+  "units": {
+    "liters": "L",
+    "kg": "kg",
+    "cylinders": "cyl",
+    "items": "items",
+    "kits": "kits"
+  },
+  "time": {
+    "justNow": "Just now",
+    "minutesAgo": "{{n}} min ago",
+    "hoursAgo": "{{n}} hours ago",
+    "daysAgo": "{{n}} days ago"
+  }
+}

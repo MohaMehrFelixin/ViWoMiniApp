@@ -1,0 +1,49 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_USER: viwo
+      POSTGRES_PASSWORD: viwo
+      POSTGRES_DB: viwo_coupon
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U viwo -d viwo_coupon"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: viwo
+      POSTGRES_PASSWORD: viwo
+      POSTGRES_DB: viwo_coupon
+      POSTGRES_SSL_MODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      SIGNING_KEY_PATH: /app/keys/coupon_signing.pem
+      ENVIRONMENT: development
+    volumes: ["keys:/app/keys"]
+volumes:
+  pgdata:
+  keys:

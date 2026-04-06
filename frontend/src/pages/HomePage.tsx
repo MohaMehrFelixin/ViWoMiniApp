@@ -1,0 +1,110 @@
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { useHouseholdStore } from "../store/useHouseholdStore";
+import { useBalanceStore } from "../store/useBalanceStore";
+import { CategoryCard } from "../components/CategoryCard";
+import { Loading } from "../components/Loading";
+import { ErrorState } from "../components/ErrorState";
+import { EmptyState } from "../components/EmptyState";
+import { IconHouse, IconEmpty } from "../components/Icons";
+import { getWeekNumber } from "../lib/utils";
+
+export function HomePage() {
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const { household, fetchHousehold, loading: hhLoading } = useHouseholdStore();
+  const {
+    balances,
+    loading: balLoading,
+    error,
+    fetchBalances,
+    lastFetched,
+  } = useBalanceStore();
+
+  useEffect(() => {
+    fetchHousehold();
+  }, [fetchHousehold]);
+
+  useEffect(() => {
+    if (household) {
+      fetchBalances();
+    }
+  }, [household, fetchBalances]);
+
+  const loading = hhLoading || balLoading;
+
+  if (loading && balances.length === 0) return <Loading />;
+  if (error && balances.length === 0)
+    return <ErrorState message={error} onRetry={fetchBalances} />;
+
+  if (!household) {
+    return (
+      <EmptyState
+        icon={<IconHouse size={48} />}
+        title={t("home.registerFirst")}
+        action={
+          <button
+            className="glass-btn glass-btn-primary"
+            onClick={() => navigate("/household")}
+          >
+            {t("household.register")}
+          </button>
+        }
+      />
+    );
+  }
+
+  if (balances.length === 0) {
+    return (
+      <EmptyState icon={<IconEmpty size={48} />} title={t("home.noAllocations")} />
+    );
+  }
+
+  const toggleLang = () => {
+    const next = i18n.language === "fa" ? "en" : "fa";
+    i18n.changeLanguage(next);
+    document.documentElement.dir = next === "fa" ? "rtl" : "ltr";
+    document.documentElement.lang = next;
+  };
+
+  return (
+    <div className="space-y-4 p-4">
+      <div className="glass glass-animate flex items-center justify-between p-4">
+        <div>
+          <h1 className="text-primary text-lg font-bold">{t("home.title")}</h1>
+          <span className="text-tertiary text-xs">
+            {t("home.week", { n: getWeekNumber() })}
+            {lastFetched && (
+              <span>
+                {" \u00B7 "}
+                {new Date(lastFetched).toLocaleTimeString(
+                  i18n.language === "fa" ? "fa-IR" : "en-US",
+                  { hour: "2-digit", minute: "2-digit" }
+                )}
+              </span>
+            )}
+          </span>
+        </div>
+        <button
+          onClick={toggleLang}
+          className="glass-btn glass-btn-sm"
+          aria-label="Toggle language"
+        >
+          {i18n.language === "fa" ? "EN" : "\u0641\u0627"}
+        </button>
+      </div>
+
+      <div className="glass-stagger space-y-3">
+        {Object.values(
+          balances.reduce<Record<string, typeof balances[0]>>((acc, b) => {
+            if (!acc[b.category]) acc[b.category] = b;
+            return acc;
+          }, {})
+        ).map((b) => (
+          <CategoryCard key={b.category} balance={b} />
+        ))}
+      </div>
+    </div>
+  );
+}

@@ -27,7 +27,12 @@ export function HomePage() {
 
   useEffect(() => {
     fetchHousehold();
-    promptAddToHomeScreen();
+    // Prompt add-to-home-screen only once per install
+    const prompted = sessionStorage.getItem("viwo-hs-prompted");
+    if (!prompted) {
+      promptAddToHomeScreen();
+      sessionStorage.setItem("viwo-hs-prompted", "1");
+    }
   }, [fetchHousehold]);
 
   useEffect(() => {

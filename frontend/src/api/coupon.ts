@@ -168,6 +168,40 @@ export async function getItemAllocations(
     .json<ItemAllocationsResponse>();
 }
 
+// --- Volunteer / Provider Registration (KYC flow → backend) ---
+
+export async function registerVolunteer(specialty: string): Promise<unknown> {
+  return api.post("volunteer/register", { json: { specialty } }).json();
+}
+
+export async function getVolunteerStatus(): Promise<{ is_volunteer: boolean; specialty: string; status: string }> {
+  return api.get("volunteer/status").json();
+}
+
+export async function registerProvider(data: {
+  service_type_code: string;
+  store_address: string;
+  store_description: string;
+  lat: number;
+  lng: number;
+}): Promise<unknown> {
+  return api.post("provider/register", { json: data }).json();
+}
+
+export async function getProviderRegistrationStatus(): Promise<{ is_provider: boolean; status: string; service_type: string }> {
+  return api.get("provider/status").json();
+}
+
+export async function submitProductOfferings(offerings: Array<{
+  product_name: string;
+  product_name_fa: string;
+  quantity: string;
+  unit: string;
+  description: string;
+}>): Promise<unknown> {
+  return api.post("offerings/submit", { json: { offerings } }).json();
+}
+
 // --- Provider / Distributor ---
 
 export async function getProviderProfile(): Promise<ProviderProfileResponse> {

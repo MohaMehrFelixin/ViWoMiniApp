@@ -237,13 +237,26 @@ func (h *CouponHandler) HandleGetNotices(w http.ResponseWriter, r *http.Request)
 		httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"notices": []interface{}{}})
 		return
 	}
-	var notices []json.RawMessage
+
+	// Bug B2 fix: filter out inactive notices before returning. Previously
+	// the public endpoint returned the full array including notices the
+	// admin had toggled inactive, which made the toggle meaningless.
+	var notices []map[string]interface{}
 	if err := json.Unmarshal(data, &notices); err != nil {
 		h.logger.Warn("invalid notices JSON in Redis", zap.Error(err))
 		httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"notices": []interface{}{}})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"notices": notices})
+
+	active := make([]map[string]interface{}, 0, len(notices))
+	for _, n := range notices {
+		// Default to active=true for legacy notices that don't have the field.
+		if a, ok := n["active"].(bool); ok && !a {
+			continue
+		}
+		active = append(active, n)
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"notices": active})
 }
 
 // --- KYC Handlers ---

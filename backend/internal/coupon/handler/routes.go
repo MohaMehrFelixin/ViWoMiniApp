@@ -8,7 +8,7 @@ import (
 	"github.com/viwo-app/mini-coupon/internal/middleware"
 )
 
-func RegisterRoutes(r chi.Router, h *CouponHandler, tgAuth func(http.Handler) http.Handler, rdb *redis.Client) {
+func RegisterRoutes(r chi.Router, h *CouponHandler, reg *RegistrationHandler, tgAuth func(http.Handler) http.Handler, rdb *redis.Client) {
 	writeRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 5, Burst: 5})
 	qrRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 3, Burst: 5})
 	redeemRL := middleware.RateLimiter(rdb, middleware.RateLimitConfig{RequestsPerSecond: 1, Burst: 3})
@@ -43,5 +43,12 @@ func RegisterRoutes(r chi.Router, h *CouponHandler, tgAuth func(http.Handler) ht
 		r.With(kycRL).Post("/kyc/otp/send", h.HandleSendOTP)
 		r.With(kycRL).Post("/kyc/otp/verify", h.HandleVerifyOTP)
 		r.With(kycRL).Post("/kyc/verify-identity", h.HandleVerifyIdentity)
+
+		// Volunteer / Provider / Product Offering Registration
+		r.With(writeRL).Post("/volunteer/register", reg.HandleRegisterVolunteer)
+		r.Get("/volunteer/status", reg.HandleGetVolunteerStatus)
+		r.With(writeRL).Post("/provider/register", reg.HandleRegisterProvider)
+		r.Get("/provider/status", reg.HandleGetProviderStatus)
+		r.With(writeRL).Post("/offerings/submit", reg.HandleSubmitProductOfferings)
 	})
 }

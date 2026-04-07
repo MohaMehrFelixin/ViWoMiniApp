@@ -73,6 +73,17 @@ services:
     ports:
       - "127.0.0.1:3000:80"
 
+  # Admin SPA — served on viwoapp.org via the host nginx.
+  # Internal port 3001 mirrors the dev convention. Built with Vite mode=production
+  # so the base path is "/" instead of "/admin/".
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "127.0.0.1:3001:80"
+
 volumes:
   pgdata:
   redisdata:

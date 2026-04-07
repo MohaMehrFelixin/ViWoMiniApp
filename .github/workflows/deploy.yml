@@ -14,15 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── Backend ──
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.23"
 
       - name: Build backend
         working-directory: backend
         run: go build ./...
 
+      - name: Test backend
+        working-directory: backend
+        run: go test -count=1 ./...
+
+      # ── Frontend (Mini App) ──
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -32,7 +38,7 @@ jobs:
         working-directory: frontend
         run: npm ci --legacy-peer-deps
 
-      - name: TypeScript check
+      - name: Frontend TypeScript check
         working-directory: frontend
         run: npx tsc --noEmit
 
@@ -41,6 +47,19 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE: /api/v1/coupon
+
+      # ── Admin SPA ──
+      - name: Install admin dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Admin TypeScript check
+        working-directory: admin
+        run: npx tsc --noEmit
+
+      - name: Build admin
+        working-directory: admin
+        run: npm run build
 
   deploy:
     needs: build-and-test
@@ -53,11 +72,18 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
+          # Pull, rebuild all services (including the new admin), wait for
+          # the backend to be healthy, then prune dangling images. Both the
+          # main app (port 3000) and admin (port 3001) come up via
+          # docker-compose; nginx routes by Host header.
           script: |
+            set -e
             cd /opt/viwo
             git pull origin main
             docker-compose -f docker-compose.prod.yml up -d --build
             sleep 30
-            curl -sf http://127.0.0.1:8080/health || exit 1
+            curl -sf http://127.0.0.1:8080/health || { echo "backend health check failed"; exit 1; }
+            curl -sf http://127.0.0.1:3000 > /dev/null || { echo "frontend not responding"; exit 1; }
+            curl -sf http://127.0.0.1:3001 > /dev/null || { echo "admin not responding"; exit 1; }
             docker image prune -f
             echo "Deploy successful!"

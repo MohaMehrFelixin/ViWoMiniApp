@@ -9,7 +9,7 @@ import { useKycStore } from "../store/useKycStore";
 import { useProviderStore } from "../store/useProviderStore";
 import { useProductOfferingStore } from "../store/useProductOfferingStore";
 import { HouseholdTab } from "./HouseholdPage";
-import { IconUser, IconFamily, IconHistory, IconShield } from "../components/Icons";
+import { IconUser, IconFamily, IconHistory, IconShield, IconHeadset } from "../components/Icons";
 import { RedemptionItem } from "../components/RedemptionItem";
 import { Loading } from "../components/Loading";
 import { ErrorState } from "../components/ErrorState";
@@ -51,6 +51,7 @@ const MENU_ITEMS = [
   { path: "/profile/household", labelKey: "profile.household", Icon: IconFamily, color: "var(--cat-food)" },
   { path: "/profile/history", labelKey: "profile.history", Icon: IconHistory, color: "var(--cat-fuel)" },
   { path: "/profile/collaboration", labelKey: "profile.collaboration", Icon: IconShield, color: "var(--cat-hygiene)" },
+  { path: "/profile/support", labelKey: "profile.support", Icon: IconHeadset, color: "var(--cat-medical)" },
 ] as const;
 
 export function ProfilePage() {

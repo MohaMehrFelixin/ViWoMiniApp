@@ -211,6 +211,32 @@ export type CouponCategory =
   | "medical"
   | "energy";
 
+// --- Support Tickets ---
+
+export interface SupportTicket {
+  id: number;
+  category: string;
+  priority: string;
+  subject: string;
+  description: string;
+  reference_code?: string;
+  status: "open" | "in_progress" | "resolved" | "closed";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmitTicketRequest {
+  category: string;
+  priority: string;
+  subject: string;
+  description: string;
+  reference_code?: string;
+}
+
+export interface TicketsResponse {
+  tickets: SupportTicket[];
+}
+
 // --- Catalog Items (admin-defined products per category) ---
 
 export interface CatalogUnit {

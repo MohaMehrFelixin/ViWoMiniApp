@@ -394,6 +394,57 @@ type ProductOfferingsResponse struct {
 	Offerings []ProductOffering `json:"offerings"`
 }
 
+// --- Support Ticket models ---
+
+const (
+	TicketStatusOpen       = "open"
+	TicketStatusInProgress = "in_progress"
+	TicketStatusResolved   = "resolved"
+	TicketStatusClosed     = "closed"
+
+	TicketPriorityNormal = "normal"
+	TicketPriorityHigh   = "high"
+	TicketPriorityUrgent = "urgent"
+)
+
+type SupportTicket struct {
+	ID             int64      `json:"id"`
+	HouseholdID    int64      `json:"household_id"`
+	TelegramUserID int64      `json:"telegram_user_id"`
+	Category       string     `json:"category"`
+	Priority       string     `json:"priority"`
+	Subject        string     `json:"subject"`
+	Description    string     `json:"description"`
+	ReferenceCode  *string    `json:"reference_code,omitempty"`
+	Status         string     `json:"status"`
+	AssignedTo     *int64     `json:"assigned_to,omitempty"`
+	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
+	ResolutionNote *string    `json:"resolution_note,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+type TicketReply struct {
+	ID         int64     `json:"id"`
+	TicketID   int64     `json:"ticket_id"`
+	AuthorType string    `json:"author_type"` // "user" or "admin"
+	AuthorID   int64     `json:"author_id"`
+	Message    string    `json:"message"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type SubmitTicketRequest struct {
+	Category      string `json:"category" validate:"required,oneof=coupon_issue account_issue app_bug data_correction corruption_report critical_report"`
+	Priority      string `json:"priority" validate:"required,oneof=normal high urgent"`
+	Subject       string `json:"subject" validate:"required,min=3,max=200"`
+	Description   string `json:"description" validate:"required,min=10,max=2000"`
+	ReferenceCode string `json:"reference_code" validate:"max=100"`
+}
+
+type TicketsResponse struct {
+	Tickets []SupportTicket `json:"tickets"`
+}
+
 // Request DTOs.
 
 type RegisterHouseholdRequest struct {

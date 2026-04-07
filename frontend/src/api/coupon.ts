@@ -29,6 +29,8 @@ import type {
   ProviderProfileResponse,
   ProviderSessionResponse,
   ProviderStatsResponse,
+  SubmitTicketRequest,
+  TicketsResponse,
 } from "../lib/types";
 
 export async function registerHousehold(
@@ -182,6 +184,16 @@ export async function closeProviderSession(): Promise<ProviderSessionResponse> {
 
 export async function getProviderStats(): Promise<ProviderStatsResponse> {
   return api.get("provider/stats").json<ProviderStatsResponse>();
+}
+
+// --- Support Tickets ---
+
+export async function getTickets(): Promise<TicketsResponse> {
+  return api.get("tickets").json<TicketsResponse>();
+}
+
+export async function submitTicket(data: SubmitTicketRequest): Promise<unknown> {
+  return api.post("tickets", { json: data }).json();
 }
 
 // --- Notices ---

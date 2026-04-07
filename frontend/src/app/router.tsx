@@ -6,6 +6,7 @@ import { ProfilePage, ProfileInfoPage, ProfileHouseholdPage, ProfileHistoryPage,
 import { MapPage } from "../pages/MapPage";
 import { ScannerPage } from "../pages/ScannerPage";
 import { ProviderPage } from "../pages/ProviderPage";
+import { SupportPage } from "../pages/SupportPage";
 
 export function AppRouter() {
   return (
@@ -21,6 +22,7 @@ export function AppRouter() {
       <Route path="/map" element={<MapPage />} />
       <Route path="/scanner" element={<ScannerPage />} />
       <Route path="/provider" element={<ProviderPage />} />
+      <Route path="/profile/support" element={<SupportPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

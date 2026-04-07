@@ -353,12 +353,48 @@ func MaxOTPAttemptsExported() int {
 	return maxOTPAttempts
 }
 
-// ipMatches checks if two IPs are the same (handles IPv4-mapped IPv6).
+// ipMatches checks whether the incoming IP belongs to the same network as the
+// stored one. We do NOT require exact equality because production users — and
+// especially the ones this admin panel is built for (mobile responders during
+// a crisis) — connect through CGNAT, mobile carriers, corporate VPNs, and
+// load-balanced proxies that rotate the public egress IP between requests.
+// Strict equality made sessions self-destruct on the very next click.
+//
+// Security tradeoff:
+//   - We still pin to a network range, so a stolen token can't be replayed
+//     from a different country / ISP / hosting provider.
+//   - Combined with UA binding, the random 64-byte token, HTTPS, and the
+//     8h sliding TTL, this is sufficient defense in depth for the admin panel.
+//   - For IPv4 we accept any address in the same /24 (first 3 octets).
+//   - For IPv6 we accept any address in the same /48 (first 6 bytes), which
+//     is the standard end-site allocation.
 func ipMatches(stored, incoming string) bool {
 	s := net.ParseIP(stored)
 	i := net.ParseIP(incoming)
 	if s == nil || i == nil {
+		// One side isn't a valid IP — fall back to strict string compare so
+		// we don't silently accept anything when parsing fails.
 		return stored == incoming
 	}
-	return s.Equal(i)
+
+	// Normalize IPv4-mapped IPv6 (::ffff:1.2.3.4) to 4-byte IPv4.
+	if s4, i4 := s.To4(), i.To4(); s4 != nil && i4 != nil {
+		return s4[0] == i4[0] && s4[1] == i4[1] && s4[2] == i4[2]
+	}
+	if (s.To4() == nil) != (i.To4() == nil) {
+		// One IPv4, one IPv6 — different families, reject.
+		return false
+	}
+
+	// Both IPv6 — compare first 6 bytes (/48 prefix).
+	s16, i16 := s.To16(), i.To16()
+	if s16 == nil || i16 == nil {
+		return false
+	}
+	for k := 0; k < 6; k++ {
+		if s16[k] != i16[k] {
+			return false
+		}
+	}
+	return true
 }

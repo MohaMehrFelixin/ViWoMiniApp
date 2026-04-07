@@ -14,9 +14,10 @@ interface PageShellProps<T> {
   fetchData: (page: number) => Promise<{ items: T[]; total: number }>;
   getRowKey: (row: T) => string | number;
   actions?: ReactNode;
+  onRowClick?: (row: T) => void;
 }
 
-export function PageShell<T>({ title, subtitle, columns, fetchData, getRowKey, actions }: PageShellProps<T>) {
+export function PageShell<T>({ title, subtitle, columns, fetchData, getRowKey, actions, onRowClick }: PageShellProps<T>) {
   const [data, setData] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -82,7 +83,11 @@ export function PageShell<T>({ title, subtitle, columns, fetchData, getRowKey, a
               </thead>
               <tbody>
                 {data.map((row) => (
-                  <tr key={getRowKey(row)}>
+                  <tr
+                    key={getRowKey(row)}
+                    onClick={() => onRowClick?.(row)}
+                    style={onRowClick ? { cursor: "pointer" } : undefined}
+                  >
                     {columns.map((col) => (
                       <td key={col.key}>
                         {col.render

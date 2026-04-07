@@ -28,8 +28,8 @@ jobs:
         working-directory: backend
         run: go test -count=1 ./...
 
-      # ── Frontend (Mini App) ──
-      - name: Set up Node
+      # ── Frontend (Mini App) — Node 20 (frontend uses ky@1.x) ──
+      - name: Set up Node 20 for frontend
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -48,7 +48,12 @@ jobs:
         env:
           VITE_API_BASE: /api/v1/coupon
 
-      # ── Admin SPA ──
+      # ── Admin SPA — Node 22 (admin uses ky@2.x which requires node>=22) ──
+      - name: Set up Node 22 for admin
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install admin dependencies
         working-directory: admin
         run: npm ci

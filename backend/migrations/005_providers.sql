@@ -131,7 +131,10 @@ CREATE TABLE IF NOT EXISTS provider_transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_ptx_provider ON provider_transactions (provider_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ptx_provider_cat ON provider_transactions (provider_id, category);
-CREATE INDEX IF NOT EXISTS idx_ptx_date ON provider_transactions (provider_id, created_at::date);
+-- NOTE: an index on (created_at::date) cannot be created because the cast
+-- depends on the session timezone (mutable). Daily aggregation queries fall
+-- back to the (provider_id, created_at DESC) index above, which is sufficient
+-- for the current dataset size.
 
 -- ============================================================
 -- VIEWS  (convenient stats queries)
@@ -141,12 +144,12 @@ CREATE INDEX IF NOT EXISTS idx_ptx_date ON provider_transactions (provider_id, c
 CREATE OR REPLACE VIEW v_provider_daily_stats AS
 SELECT
     provider_id,
-    created_at::date AS work_date,
+    (created_at::date) AS work_date,
     category,
     COUNT(*)         AS tx_count,
     SUM(amount::numeric) AS total_amount
 FROM provider_transactions
-GROUP BY provider_id, created_at::date, category;
+GROUP BY provider_id, (created_at::date), category;
 
 -- Work summary per provider (total days, total hours)
 CREATE OR REPLACE VIEW v_provider_work_summary AS

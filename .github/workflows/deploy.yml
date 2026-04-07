@@ -85,9 +85,17 @@ jobs:
             set -e
             cd /opt/viwo
             git pull origin main
+
+            # Build images and bring up postgres+redis first so migrations can run
+            # against a healthy DB before the backend tries to connect to a schema
+            # that may be missing tables added since the last deploy.
+            docker-compose -f docker-compose.prod.yml up -d --build postgres redis
+            bash deploy/run-migrations.sh
+
+            # Now bring up the rest of the stack with the schema in place.
             docker-compose -f docker-compose.prod.yml up -d --build
-            sleep 30
-            curl -sf http://127.0.0.1:8080/health || { echo "backend health check failed"; exit 1; }
+            sleep 15
+            curl -sf http://127.0.0.1:8080/health || { echo "backend health check failed"; docker logs viwo-backend-1 --tail 50; exit 1; }
             curl -sf http://127.0.0.1:3000 > /dev/null || { echo "frontend not responding"; exit 1; }
             curl -sf http://127.0.0.1:3001 > /dev/null || { echo "admin not responding"; exit 1; }
             docker image prune -f

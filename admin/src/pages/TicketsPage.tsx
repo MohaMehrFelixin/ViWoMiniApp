@@ -1,20 +1,11 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageShell } from "../components/PageShell";
 import { DetailPanel, DetailSection, DetailRow } from "../components/DetailPanel";
-import { listTickets, resolveTicket } from "../api/admin";
+import { listTickets, resolveTicket, type TicketRow } from "../api/admin";
 import { CheckCircle } from "lucide-react";
-
-interface TicketRow {
-  id: number;
-  category: string;
-  priority: string;
-  subject: string;
-  description: string;
-  reference_code?: string;
-  status: string;
-  household_id: number;
-  created_at: string;
-}
+import { useToast } from "../components/Toast";
+import { extractErrorMessage } from "../lib/errors";
 
 const PRIO_COLORS: Record<string, { color: string; bg: string }> = {
   urgent: { color: "#ef4444", bg: "rgba(239,68,68,0.15)" },
@@ -29,24 +20,34 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
 };
 
 export function TicketsPage() {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<TicketRow | null>(null);
   const [acting, setActing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const toast = useToast();
 
-  const fetchData = useCallback(async (page: number) => {
-    const res = await listTickets({ page: String(page), limit: "25" });
-    return { items: (res.tickets ?? []) as TicketRow[], total: res.total };
-  }, [refreshKey]); // eslint-disable-line
+  const fetchData = useCallback(
+    async (page: number) => {
+      void refreshKey;
+      const res = await listTickets({ page: String(page), limit: "25" });
+      return { items: res.tickets, total: res.total };
+    },
+    [refreshKey]
+  );
 
   const handleResolve = async () => {
     if (!selected) return;
     setActing(true);
     try {
       await resolveTicket(selected.id);
+      toast.success(t("tickets.resolveSuccess"));
       setSelected({ ...selected, status: "resolved" });
       setRefreshKey((k) => k + 1);
-    } catch { /* */ }
-    setActing(false);
+    } catch (err) {
+      toast.error(await extractErrorMessage(err, t("errors.actionFailed")));
+    } finally {
+      setActing(false);
+    }
   };
 
   const ps = PRIO_COLORS[selected?.priority ?? "normal"] ?? PRIO_COLORS.normal;
@@ -55,50 +56,50 @@ export function TicketsPage() {
   return (
     <>
       <PageShell<TicketRow>
-        title="Support Tickets"
-        subtitle="Review and resolve user issues"
+        title={t("tickets.title")}
+        subtitle={t("tickets.subtitle")}
         getRowKey={(r) => r.id}
         fetchData={fetchData}
         onRowClick={setSelected}
         columns={[
           { key: "id", label: "#", render: (r) => <span className="font-mono text-xs">#{r.id}</span> },
-          { key: "priority", label: "Priority", render: (r) => { const p = PRIO_COLORS[r.priority] ?? PRIO_COLORS.normal; return <span className="badge" style={{ background: p.bg, color: p.color }}>{r.priority}</span>; } },
-          { key: "category", label: "Category", render: (r) => <span className="text-xs capitalize">{r.category.replace(/_/g, " ")}</span> },
-          { key: "subject", label: "Subject", render: (r) => <span className="max-w-[300px] truncate block">{r.subject}</span> },
-          { key: "status", label: "Status", render: (r) => { const s = STATUS_COLORS[r.status] ?? STATUS_COLORS.open; return <span className="badge" style={{ background: s.bg, color: s.color }}>{r.status.replace(/_/g, " ")}</span>; } },
-          { key: "created_at", label: "Created", render: (r) => new Date(r.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) },
+          { key: "priority", label: t("tickets.priority"), render: (r) => { const p = PRIO_COLORS[r.priority] ?? PRIO_COLORS.normal; return <span className="badge" style={{ background: p.bg, color: p.color }}>{r.priority}</span>; } },
+          { key: "category", label: t("tickets.category"), render: (r) => <span className="text-xs capitalize">{r.category.replace(/_/g, " ")}</span> },
+          { key: "subject", label: t("tickets.subject"), render: (r) => <span className="max-w-[300px] truncate block">{r.subject}</span> },
+          { key: "status", label: t("common.status"), render: (r) => { const s = STATUS_COLORS[r.status] ?? STATUS_COLORS.open; return <span className="badge" style={{ background: s.bg, color: s.color }}>{r.status.replace(/_/g, " ")}</span>; } },
+          { key: "created_at", label: t("common.created"), render: (r) => new Date(r.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) },
         ]}
       />
 
       <DetailPanel
         open={selected !== null}
         onClose={() => setSelected(null)}
-        title={`Ticket #${selected?.id}`}
+        title={`#${selected?.id ?? ""}`}
         subtitle={selected?.subject}
         actions={
           selected && (selected.status === "open" || selected.status === "in_progress") ? (
             <button className="btn btn-primary" onClick={handleResolve} disabled={acting}>
-              <CheckCircle size={14} /> Resolve
+              <CheckCircle size={14} /> {t("common.confirm")}
             </button>
           ) : null
         }
       >
         {selected && (
           <>
-            <DetailSection title="Ticket Info">
-              <DetailRow label="Subject" value={selected.subject} />
-              <DetailRow label="Category" value={selected.category.replace(/_/g, " ")} />
-              <DetailRow label="Priority" value={selected.priority} badge={ps} />
-              <DetailRow label="Status" value={selected.status.replace(/_/g, " ")} badge={ss} />
-              <DetailRow label="Household" value={`#${selected.household_id}`} mono />
-              {selected.reference_code && <DetailRow label="Reference" value={selected.reference_code} mono />}
-              <DetailRow label="Created" value={new Date(selected.created_at).toLocaleString()} />
+            <DetailSection title={t("tickets.info")}>
+              <DetailRow label={t("tickets.subject")} value={selected.subject} />
+              <DetailRow label={t("tickets.category")} value={selected.category.replace(/_/g, " ")} />
+              <DetailRow label={t("tickets.priority")} value={selected.priority} badge={ps} />
+              <DetailRow label={t("common.status")} value={selected.status.replace(/_/g, " ")} badge={ss} />
+              <DetailRow label={t("tickets.household")} value={`#${selected.household_id}`} mono />
+              {selected.reference_code && <DetailRow label={t("tickets.reference")} value={selected.reference_code} mono />}
+              <DetailRow label={t("common.created")} value={new Date(selected.created_at).toLocaleString()} />
             </DetailSection>
 
-            <DetailSection title="Description">
+            <DetailSection title={t("tickets.description")}>
               <div className="card p-4">
                 <p className="text-sm leading-relaxed" style={{ color: "var(--text-2)" }}>
-                  {selected.description || "No description provided"}
+                  {selected.description || t("tickets.noDescription")}
                 </p>
               </div>
             </DetailSection>

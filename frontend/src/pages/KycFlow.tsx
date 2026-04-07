@@ -650,12 +650,28 @@ function StepVolunteer({
     });
   }, [search, t]);
 
-  const handleNext = () => {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleNext = async () => {
     const spec = wants
-      ? selected === "__custom" ? `custom:${custom}` : selected
+      ? selected === "__custom"
+        ? `custom:${custom}`
+        : selected
       : null;
-    setVolunteer(!!wants, spec);
-    onNext();
+    setSubmitting(true);
+    setError(null);
+    try {
+      // Async POST to backend; only advance on success so the admin panel
+      // is the source of truth for volunteer registrations.
+      await setVolunteer(!!wants, spec);
+      onNext();
+    } catch (err) {
+      const message = await extractErrorMessage(err, t("kyc.registrationFailed"));
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -727,14 +743,24 @@ function StepVolunteer({
         </div>
       )}
 
+      {error && (
+        <div className="glass-subtle rounded-xl p-3" style={{ borderColor: "rgba(239,68,68,0.4)" }}>
+          <p className="text-sm" style={{ color: "var(--danger, #ef4444)" }}>{error}</p>
+        </div>
+      )}
+
       <div className="flex gap-3">
-        <button className="glass-btn flex-1" onClick={onBack}>{t("common.back")}</button>
+        <button className="glass-btn flex-1" onClick={onBack} disabled={submitting}>{t("common.back")}</button>
         <button
           className="glass-btn glass-btn-primary flex-1"
           onClick={handleNext}
-          disabled={wants === null || (wants && selected === "__custom" && !custom.trim())}
+          disabled={
+            submitting ||
+            wants === null ||
+            (wants === true && (!selected || (selected === "__custom" && !custom.trim())))
+          }
         >
-          {t("kyc.next")}
+          {submitting ? "..." : t("kyc.next")}
         </button>
       </div>
     </div>
@@ -971,9 +997,7 @@ function StepDistributorAndSubmit({
     setError(null);
 
     try {
-      setDistributor(!!wants, storeAddr, storeDesc);
-
-      // Collect user location for registration
+      // Collect user location for registration first.
       const loc = await getLocation();
       const userLat = loc?.lat ?? 0;
       const userLng = loc?.lng ?? 0;
@@ -1010,6 +1034,19 @@ function StepDistributorAndSubmit({
         lng: userLng,
         kyc_track_id: kycTrackId,
       });
+
+      // After the household is registered, persist the distributor opt-in
+      // to the backend so admins can review the application. This must
+      // happen AFTER registerHousehold because the backend `provider/register`
+      // endpoint requires an existing household. Wrapped so a distributor
+      // failure doesn't prevent household registration from completing.
+      try {
+        await setDistributor(!!wants, storeAddr, storeDesc);
+      } catch (distErr) {
+        // Log but don't block — the household IS registered. The user can
+        // re-apply as a distributor later from the profile page.
+        console.error("distributor registration failed", distErr);
+      }
 
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
       onRegistered(household);

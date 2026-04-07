@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,7 +26,9 @@ func NewEntityRepository(pool *pgxpool.Pool) *EntityRepository {
 
 // ─── Households ───
 
-func (r *EntityRepository) ListHouseholds(ctx context.Context, search string, status string, offset, limit int) ([]couponModel.Household, int, error) {
+// ListHouseholds returns paginated households filtered by status, search, and
+// the admin's province scope. Empty `provinceScope` means global access (CEO/CTO).
+func (r *EntityRepository) ListHouseholds(ctx context.Context, search string, status string, provinceScope []string, offset, limit int) ([]couponModel.Household, int, error) {
 	where := "1=1"
 	args := []interface{}{}
 	argN := 1
@@ -37,6 +41,13 @@ func (r *EntityRepository) ListHouseholds(ctx context.Context, search string, st
 	if search != "" {
 		where += fmt.Sprintf(" AND (household_code ILIKE $%d OR address ILIKE $%d OR CAST(telegram_user_id AS TEXT) LIKE $%d)", argN, argN, argN)
 		args = append(args, "%"+search+"%")
+		argN++
+	}
+	// Province scoping: if provinceScope is non-empty, restrict to those provinces.
+	// Empty scope means the admin is global (L9-10) and sees everything.
+	if len(provinceScope) > 0 {
+		where += fmt.Sprintf(" AND province_code = ANY($%d)", argN)
+		args = append(args, provinceScope)
 		argN++
 	}
 
@@ -186,13 +197,18 @@ func (r *EntityRepository) ReverseAllocation(ctx context.Context, tx pgx.Tx, all
 
 // ─── Distribution Centers ───
 
-func (r *EntityRepository) ListCenters(ctx context.Context, status string, offset, limit int) ([]couponModel.DistributionCenter, int, error) {
+func (r *EntityRepository) ListCenters(ctx context.Context, status string, provinceScope []string, offset, limit int) ([]couponModel.DistributionCenter, int, error) {
 	where := "1=1"
 	args := []interface{}{}
 	argN := 1
 	if status != "" {
 		where += fmt.Sprintf(" AND status = $%d", argN)
 		args = append(args, status)
+		argN++
+	}
+	if len(provinceScope) > 0 {
+		where += fmt.Sprintf(" AND province_code = ANY($%d)", argN)
+		args = append(args, provinceScope)
 		argN++
 	}
 
@@ -394,11 +410,80 @@ func (r *EntityRepository) ListAllocations(ctx context.Context, status, category
 	return out, total, nil
 }
 
+// AdjustAllocation sets the allocation total to a new value and recalculates
+// remaining = newTotal - used. Validates that newTotal is non-negative and
+// >= used_amount so remaining never goes negative.
+//
+// Bug B3 fix: previous version performed no validation, allowing negative
+// remaining and silently writing non-numeric strings.
 func (r *EntityRepository) AdjustAllocation(ctx context.Context, id int64, newAmount string, adminID int64) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE coupon_allocations SET total_amount = $2::NUMERIC, remaining_amount = $2::NUMERIC - used_amount, updated_by = $3 WHERE id = $1`,
-		id, newAmount, adminID)
+	// Validate the input is a real numeric string before sending to Postgres.
+	// strconv only validates plain floats; allocations are big.Float text.
+	if _, err := strconv.ParseFloat(newAmount, 64); err != nil {
+		return fmt.Errorf("invalid amount: %w", err)
+	}
+	parsed, _ := strconv.ParseFloat(newAmount, 64)
+	if parsed < 0 {
+		return fmt.Errorf("amount cannot be negative")
+	}
+
+	// Atomic conditional update: only succeed if newTotal >= used_amount.
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE coupon_allocations
+		SET total_amount     = $2::NUMERIC,
+		    remaining_amount = $2::NUMERIC - used_amount,
+		    updated_by       = $3,
+		    updated_at       = NOW()
+		WHERE id = $1 AND used_amount <= $2::NUMERIC`,
+		id, newAmount, adminID,
+	)
+	if err != nil {
+		return fmt.Errorf("adjust allocation: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("allocation not found or new total is below already-used amount")
+	}
+	return nil
+}
+
+// PauseAllocation sets is_paused=true with a reason. Paused allocations
+// are excluded from new redemptions until resumed.
+func (r *EntityRepository) PauseAllocation(ctx context.Context, id int64, reason string, adminID int64) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE coupon_allocations
+		SET is_paused = true, pause_reason = $2, updated_by = $3, updated_at = NOW()
+		WHERE id = $1`, id, reason, adminID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("allocation not found")
+	}
+	return nil
+}
+
+// ResumeAllocation clears the paused flag.
+func (r *EntityRepository) ResumeAllocation(ctx context.Context, id int64, adminID int64) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE coupon_allocations
+		SET is_paused = false, pause_reason = NULL, updated_by = $2, updated_at = NOW()
+		WHERE id = $1`, id, adminID)
 	return err
+}
+
+// ExpireAllocation sets the status to expired (cannot be redeemed further).
+func (r *EntityRepository) ExpireAllocation(ctx context.Context, id int64, adminID int64) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE coupon_allocations
+		SET status = 'expired', updated_by = $2, updated_at = NOW()
+		WHERE id = $1 AND status = 'active'`, id, adminID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("allocation not found or not active")
+	}
+	return nil
 }
 
 // ─── Catalog Items ───
@@ -489,7 +574,7 @@ func (r *EntityRepository) GetRedemptionsByDay(ctx context.Context, days int) ([
 	rows, err := r.pool.Query(ctx,
 		`SELECT created_at::date AS day, category, COUNT(*) AS count, SUM(amount::NUMERIC) AS total
 		 FROM coupon_redemptions
-		 WHERE created_at >= NOW() - ($1 || ' days')::INTERVAL
+		 WHERE created_at >= NOW() - make_interval(days => $1)
 		 GROUP BY day, category ORDER BY day`, days)
 	if err != nil {
 		return nil, err
@@ -626,14 +711,147 @@ func (r *EntityRepository) UpdateSetting(ctx context.Context, key, value string,
 	return err
 }
 
-// ─── Notices (Redis-backed) ───
+// ─── Notices (Postgres source of truth) ───
 
-func (r *EntityRepository) GetNoticesFromRedis(ctx context.Context, rdb interface{ Get(ctx context.Context, key string) interface{ Result() (string, error) } }) (string, error) {
-	val, err := rdb.Get(ctx, "app:notices").Result()
+// Notice mirrors the public notice schema. The admin panel manages these via
+// CRUD endpoints; the Mini App reads them from a Redis cache rebuilt on every
+// write.
+type Notice struct {
+	ID        string    `json:"id"`
+	Text      string    `json:"text"`
+	TextFa    string    `json:"text_fa"`
+	Type      string    `json:"type"`
+	Link      *string   `json:"link,omitempty"`
+	Active    bool      `json:"active"`
+	SortOrder int       `json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ListNoticesAll returns every notice (active and inactive) for the admin UI.
+func (r *EntityRepository) ListNoticesAll(ctx context.Context) ([]Notice, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, text, text_fa, type, link, active, sort_order, created_at, updated_at
+		FROM notices ORDER BY sort_order ASC, created_at ASC`)
 	if err != nil {
-		return "[]", nil
+		return nil, err
 	}
-	return val, nil
+	defer rows.Close()
+	var out []Notice
+	for rows.Next() {
+		var n Notice
+		if err := rows.Scan(&n.ID, &n.Text, &n.TextFa, &n.Type, &n.Link, &n.Active, &n.SortOrder, &n.CreatedAt, &n.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// ListNoticesActive returns only active notices for the public-facing cache.
+// This is the read called by rebuildNoticesCache in the settings handler.
+func (r *EntityRepository) ListNoticesActive(ctx context.Context) ([]Notice, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, text, text_fa, type, link, active, sort_order, created_at, updated_at
+		FROM notices WHERE active = true ORDER BY sort_order ASC, created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Notice
+	for rows.Next() {
+		var n Notice
+		if err := rows.Scan(&n.ID, &n.Text, &n.TextFa, &n.Type, &n.Link, &n.Active, &n.SortOrder, &n.CreatedAt, &n.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// CreateNotice inserts a new notice and populates created_at/updated_at on
+// the supplied struct so the API response is complete.
+func (r *EntityRepository) CreateNotice(ctx context.Context, n *Notice, adminID int64) error {
+	if n.SortOrder == 0 {
+		var maxOrder int
+		_ = r.pool.QueryRow(ctx, "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM notices").Scan(&maxOrder)
+		n.SortOrder = maxOrder
+	}
+	return r.pool.QueryRow(ctx, `
+		INSERT INTO notices (id, text, text_fa, type, link, active, sort_order, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING created_at, updated_at`,
+		n.ID, n.Text, n.TextFa, n.Type, n.Link, n.Active, n.SortOrder, adminID,
+	).Scan(&n.CreatedAt, &n.UpdatedAt)
+}
+
+// UpdateNotice updates the mutable fields of a notice. Fields with zero
+// values still overwrite (full PUT semantics, not PATCH).
+func (r *EntityRepository) UpdateNotice(ctx context.Context, n *Notice) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE notices SET text = $2, text_fa = $3, type = $4, link = $5, active = $6
+		WHERE id = $1`,
+		n.ID, n.Text, n.TextFa, n.Type, n.Link, n.Active,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("notice not found")
+	}
+	return nil
+}
+
+// DeleteNotice removes a notice by id.
+func (r *EntityRepository) DeleteNotice(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, "DELETE FROM notices WHERE id = $1", id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("notice not found")
+	}
+	return nil
+}
+
+// ReorderNotices updates sort_order for the given list of ids in order.
+// Atomic via a single transaction so concurrent admins can't interleave
+// partial reorders.
+func (r *EntityRepository) ReorderNotices(ctx context.Context, ids []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for i, id := range ids {
+		if _, err := tx.Exec(ctx, "UPDATE notices SET sort_order = $2 WHERE id = $1", id, i); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// ReplaceNotices is a transactional bulk replace used by the legacy
+// "save all" endpoint. Truncates and re-inserts in a single tx.
+func (r *EntityRepository) ReplaceNotices(ctx context.Context, notices []Notice, adminID int64) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "DELETE FROM notices"); err != nil {
+		return err
+	}
+	for _, n := range notices {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO notices (id, text, text_fa, type, link, active, sort_order, created_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			n.ID, n.Text, n.TextFa, n.Type, n.Link, n.Active, n.SortOrder, adminID,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // ─── Fraud Detection ───
@@ -848,6 +1066,259 @@ func (r *EntityRepository) UpdateProviderStatus(ctx context.Context, id int64, s
 		query += ", approved_by = $3"
 	}
 	query += " WHERE id = $1"
-	_, err := r.pool.Exec(ctx, query, id, status, adminID)
-	return err
+	tag, err := r.pool.Exec(ctx, query, id, status, adminID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("provider not found")
+	}
+	return nil
+}
+
+// ─── Members: bulk verify, soft delete, update fields ───
+
+// BulkVerifyMembers marks multiple members KYC-verified in one statement.
+// Returns the number of rows affected.
+func (r *EntityRepository) BulkVerifyMembers(ctx context.Context, ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	tag, err := r.pool.Exec(ctx, "UPDATE household_members SET kyc_verified = true WHERE id = ANY($1)", ids)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// SoftDeleteMember sets a member as inactive. Since household_members has no
+// `deleted_at` column today, we encode soft-delete as relationship='deleted'
+// + kyc_verified=false. The household will need re-allocation after this.
+//
+// Trade-off: a hard delete would break audit trails and FKs to redemptions.
+// The soft-delete pattern preserves history.
+func (r *EntityRepository) SoftDeleteMember(ctx context.Context, memberID int64) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE household_members
+		SET relationship = 'deleted', kyc_verified = false
+		WHERE id = $1`, memberID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("member not found")
+	}
+	return nil
+}
+
+// ─── Households: admin notes, kyc_status, full update ───
+
+// UpdateHouseholdNotes appends/replaces admin_notes for a household.
+func (r *EntityRepository) UpdateHouseholdNotes(ctx context.Context, id int64, notes string, adminID int64) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE households SET admin_notes = $2, updated_by = $3 WHERE id = $1",
+		id, notes, adminID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("household not found")
+	}
+	return nil
+}
+
+// UpdateHouseholdKYCStatus sets kyc_status. Valid values: pending, verified,
+// rejected, expired. Used by KYC officer to force re-verification.
+func (r *EntityRepository) UpdateHouseholdKYCStatus(ctx context.Context, id int64, status string, adminID int64) error {
+	if status != "pending" && status != "verified" && status != "rejected" && status != "expired" {
+		return fmt.Errorf("invalid kyc_status")
+	}
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE households SET kyc_status = $2, updated_by = $3 WHERE id = $1",
+		id, status, adminID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("household not found")
+	}
+	return nil
+}
+
+// ─── Distribution Centers: stock + status management ───
+
+// UpdateCenterStock updates the per-category stock_status JSONB blob and
+// re-derives the overall status based on whether any category is empty.
+func (r *EntityRepository) UpdateCenterStock(ctx context.Context, id int64, stockStatus map[string]string, adminID int64) error {
+	// Derive overall status: out_of_stock if any category empty, low_stock if
+	// any low, otherwise open. This keeps the dashboard accurate without
+	// needing a separate update call.
+	derived := "open"
+	hasOut, hasLow := false, false
+	for _, v := range stockStatus {
+		switch v {
+		case "out", "out_of_stock":
+			hasOut = true
+		case "low", "low_stock":
+			hasLow = true
+		}
+	}
+	if hasOut {
+		derived = "out_of_stock"
+	} else if hasLow {
+		derived = "low_stock"
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE distribution_centers
+		SET stock_status = $2::jsonb, status = $3, last_modified_by = $4, updated_at = NOW()
+		WHERE id = $1`,
+		id, mapToJSONString(stockStatus), derived, adminID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("center not found")
+	}
+	return nil
+}
+
+// DeactivateCenter sets status=closed and stamps deactivated_at.
+func (r *EntityRepository) DeactivateCenter(ctx context.Context, id int64, adminID int64) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE distribution_centers
+		SET status = 'closed', deactivated_at = NOW(), last_modified_by = $2
+		WHERE id = $1`, id, adminID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("center not found")
+	}
+	return nil
+}
+
+// GetCenter fetches a single center for editing.
+func (r *EntityRepository) GetCenter(ctx context.Context, id int64) (*couponModel.DistributionCenter, error) {
+	var c couponModel.DistributionCenter
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, name, type, address, lat, lng, categories, operating_hours, queue_minutes,
+		       stock_status, province_code, status, created_at, updated_at
+		FROM distribution_centers WHERE id = $1`, id).
+		Scan(&c.ID, &c.Name, &c.Type, &c.Address, &c.Lat, &c.Lng, &c.Categories, &c.OperatingHours,
+			&c.QueueMinutes, &c.StockStatus, &c.ProvinceCode, &c.Status, &c.CreatedAt, &c.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// ─── Power Banks: admin force status ───
+
+// AdminForceSwapStatus sets a swap to any status, bypassing the normal
+// state machine. Used by admins to recover stuck swaps.
+func (r *EntityRepository) AdminForceSwapStatus(ctx context.Context, id int64, status, notes string, adminID int64) error {
+	valid := map[string]bool{
+		"pending": true, "ready": true, "picked_up": true,
+		"returned": true, "cancelled": true, "expired": true,
+	}
+	if !valid[status] {
+		return fmt.Errorf("invalid status")
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE power_bank_swaps
+		SET status = $2, admin_notes = $3, forced_by = $4, updated_at = NOW()
+		WHERE id = $1`, id, status, notes, adminID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("swap not found")
+	}
+	return nil
+}
+
+// ─── Catalog Items: create ───
+
+// CreateCatalogItem inserts a new admin-defined catalog item.
+// Bug B1 fix: previously POST /catalog/items was wired to the LIST handler,
+// silently broken. This is the real create.
+//
+// Note on scope/region: the catalog_items table has CHECK constraints
+// requiring scope ∈ {national, regional} and region ∈ {tehran, urban, rural}.
+// We accept the wider {global, national} from the frontend and normalize.
+func (r *EntityRepository) CreateCatalogItem(ctx context.Context, item map[string]interface{}, adminID int64) (int64, error) {
+	idStr, ok := item["id"].(string)
+	if !ok || idStr == "" {
+		return 0, fmt.Errorf("id required")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid id: %w", err)
+	}
+	category, _ := item["category"].(string)
+	name, _ := item["name"].(string)
+	nameFa, _ := item["name_fa"].(string)
+	icon, _ := item["icon"].(string)
+	scope, _ := item["scope"].(string)
+	if scope == "" || scope == "global" {
+		scope = "national"
+	}
+	if scope != "national" && scope != "regional" {
+		return 0, fmt.Errorf("scope must be national or regional")
+	}
+	region, _ := item["region"].(string)
+	defaultAmtRaw, _ := item["default_amount"].(float64)
+	unitCode, _ := item["unit_code"].(string)
+
+	if category == "" || name == "" || nameFa == "" || unitCode == "" {
+		return 0, fmt.Errorf("category, name, name_fa, unit_code required")
+	}
+
+	// Look up unit_id from unit_code.
+	var unitID int64
+	if err := r.pool.QueryRow(ctx, "SELECT id FROM catalog_units WHERE code = $1", unitCode).Scan(&unitID); err != nil {
+		return 0, fmt.Errorf("unit_code not found: %w", err)
+	}
+
+	var regionPtr *string
+	if scope == "regional" {
+		if region == "" {
+			return 0, fmt.Errorf("region required for regional scope")
+		}
+		regionPtr = &region
+	}
+
+	// Note: catalog_items table doesn't have created_by — admin attribution
+	// lives in the audit_logs table instead. adminID is passed to the
+	// service layer which records it in the audit log.
+	_ = adminID
+
+	_, err = r.pool.Exec(ctx, `
+		INSERT INTO catalog_items (id, category, name, name_fa, icon, scope, region, default_amount, unit_id, sort_order, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, true)`,
+		id, category, name, nameFa, icon, scope, regionPtr, defaultAmtRaw, unitID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("create catalog item: %w", err)
+	}
+	return id, nil
+}
+
+// mapToJSONString serializes a string map to a compact JSON string for jsonb columns.
+func mapToJSONString(m map[string]string) string {
+	if len(m) == 0 {
+		return "{}"
+	}
+	parts := make([]string, 0, len(m))
+	for k, v := range m {
+		// Crude but safe: keys are category constants, values are status enums.
+		parts = append(parts, fmt.Sprintf("%q:%q", k, v))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }

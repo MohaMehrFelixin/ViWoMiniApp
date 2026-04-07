@@ -72,8 +72,16 @@ func main() {
 	distributionRepo := repository.NewPostgresDistributionRepo(pgPool)
 	powerBankRepo := repository.NewPostgresPowerBankRepo(pgPool)
 
+	// Settings — must load before allocation service so the engine has its
+	// configuration. Failing fast here is correct: an empty allocation engine
+	// would silently issue zero balances.
+	settingsSvc, err := service.NewSettingsService(ctx, pgPool, logger)
+	if err != nil {
+		logger.Fatal("settings service failed", zap.Error(err))
+	}
+
 	// Services.
-	allocationSvc := service.NewAllocationService(allocationRepo, idGen, logger)
+	allocationSvc := service.NewAllocationService(allocationRepo, settingsSvc, idGen, logger)
 	householdSvc := service.NewHouseholdService(householdRepo, allocationSvc, idGen, logger)
 	redemptionSvc := service.NewRedemptionService(allocationRepo, redemptionRepo, householdRepo, pgPool, idGen, cfg.SigningKeyPath, logger)
 	distributionSvc := service.NewDistributionService(distributionRepo, logger)
@@ -100,12 +108,15 @@ func main() {
 	adminUserRepo := adminRepo.NewPostgresAdminRepo(pgPool)
 	auditLogRepo := adminRepo.NewPostgresAuditRepo(pgPool, idGen)
 	entityRepo := adminRepo.NewEntityRepository(pgPool)
-	adminSvc := adminService.NewAdminService(adminUserRepo, auditLogRepo, rdb, idGen, logger)
+	adminSvc := adminService.NewAdminService(adminUserRepo, auditLogRepo, rdb, idGen, cfg.Environment, logger)
 	entitySvc := adminService.NewEntityService(entityRepo, auditLogRepo, pgPool, logger)
 	adminH := adminHandler.NewAdminHandler(adminSvc, logger)
-	entityH := adminHandler.NewEntityHandler(entitySvc, logger)
+	entityH := adminHandler.NewEntityHandler(entitySvc, idGen, logger)
 	analyticsH := adminHandler.NewAnalyticsHandler(entityRepo, logger)
-	settingsH := adminHandler.NewSettingsHandler(entityRepo, auditLogRepo, rdb, logger)
+	// Settings handler reloads the cached snapshot after every PUT so the
+	// allocation engine sees the new values immediately.
+	settingsReload := func(ctx context.Context) error { return settingsSvc.Reload(ctx) }
+	settingsH := adminHandler.NewSettingsHandler(entityRepo, auditLogRepo, rdb, settingsReload, logger)
 	sessionAuth := adminMW.SessionAuth(rdb, logger)
 	logger.Info("admin panel initialized")
 

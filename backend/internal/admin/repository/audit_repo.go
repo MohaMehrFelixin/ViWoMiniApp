@@ -52,7 +52,7 @@ func (r *postgresAuditRepo) Log(ctx context.Context, entry *adminModel.AuditLog)
 
 func (r *postgresAuditRepo) GetByEntity(ctx context.Context, entityType string, entityID int64, limit int) ([]adminModel.AuditLog, error) {
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, admin_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent, session_id, created_at FROM audit_logs WHERE entity_type = $1 AND entity_id = $2 ORDER BY created_at DESC LIMIT $3",
+		"SELECT id, admin_id, action, entity_type, entity_id, old_value, new_value, ip_address::TEXT, user_agent, session_id, created_at FROM audit_logs WHERE entity_type = $1 AND entity_id = $2 ORDER BY created_at DESC LIMIT $3",
 		entityType, entityID, limit,
 	)
 	if err != nil {
@@ -89,7 +89,7 @@ func (r *postgresAuditRepo) GetByAdmin(ctx context.Context, adminID int64, offse
 	}
 
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, admin_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent, session_id, created_at FROM audit_logs WHERE admin_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+		"SELECT id, admin_id, action, entity_type, entity_id, old_value, new_value, ip_address::TEXT, user_agent, session_id, created_at FROM audit_logs WHERE admin_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
 		adminID, limit, offset,
 	)
 	if err != nil {
@@ -126,7 +126,7 @@ func (r *postgresAuditRepo) GetPaginated(ctx context.Context, offset, limit int)
 	}
 
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, admin_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent, session_id, created_at FROM audit_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+		"SELECT id, admin_id, action, entity_type, entity_id, old_value, new_value, ip_address::TEXT, user_agent, session_id, created_at FROM audit_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
 		limit, offset,
 	)
 	if err != nil {

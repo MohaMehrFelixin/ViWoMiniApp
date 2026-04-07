@@ -408,12 +408,23 @@ function VolunteerSection() {
     });
   }, [search, t]);
 
-  const handleSave = () => {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const handleSave = async () => {
     const spec = editSpecialty === "__custom" ? `custom:${editCustom}` : editSpecialty;
-    setVolunteer(editWants, editWants ? spec : null);
-    setEditing(false);
-    setSearch("");
-    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+    setSaving(true);
+    setError(null);
+    try {
+      await setVolunteer(editWants, editWants ? spec : null);
+      setEditing(false);
+      setSearch("");
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("kyc.registrationFailed"));
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const startEdit = () => {
@@ -446,9 +457,14 @@ function VolunteerSection() {
             {!editSpecialty && <p className="text-tertiary text-xs">{t("volunteer.noSpecialtyHint")}</p>}
           </div>
         )}
+        {error && (
+          <div className="glass-subtle rounded-xl p-2.5" style={{ borderColor: "rgba(239,68,68,0.4)" }}>
+            <p className="text-xs" style={{ color: "rgb(239,68,68)" }}>{error}</p>
+          </div>
+        )}
         <div className="flex gap-3">
-          <button className="glass-btn flex-1" onClick={() => { setEditing(false); setSearch(""); }}>{t("common.cancel")}</button>
-          <button className="glass-btn glass-btn-primary flex-1" onClick={handleSave}>{t("common.save")}</button>
+          <button className="glass-btn flex-1" onClick={() => { setEditing(false); setSearch(""); }} disabled={saving}>{t("common.cancel")}</button>
+          <button className="glass-btn glass-btn-primary flex-1" onClick={handleSave} disabled={saving}>{saving ? "..." : t("common.save")}</button>
         </div>
       </div>
     );
@@ -482,8 +498,23 @@ function DistributorSection() {
   const [editAddress, setEditAddress] = useState(storeAddress);
   const [editDesc, setEditDesc] = useState(storeDescription);
 
-  const handleSave = () => { setDistributor(editWants, editAddress, editDesc); setEditing(false); window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); };
-  const startEdit = () => { setEditWants(isDistributor); setEditAddress(storeAddress); setEditDesc(storeDescription); setEditing(true); };
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await setDistributor(editWants, editAddress, editDesc);
+      setEditing(false);
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("kyc.registrationFailed"));
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("error");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const startEdit = () => { setEditWants(isDistributor); setEditAddress(storeAddress); setEditDesc(storeDescription); setError(null); setEditing(true); };
   const statusColor = (s: string) => s === "approved" ? "rgb(34,197,94)" : s === "rejected" ? "rgb(239,68,68)" : "rgb(234,179,8)";
   const statusBg = (s: string) => s === "approved" ? "rgba(34,197,94,0.15)" : s === "rejected" ? "rgba(239,68,68,0.15)" : "rgba(234,179,8,0.15)";
 
@@ -511,9 +542,14 @@ function DistributorSection() {
             <p className="text-tertiary text-xs">{t("distributor.pendingNote")}</p>
           </div>
         )}
+        {error && (
+          <div className="glass-subtle rounded-xl p-2.5" style={{ borderColor: "rgba(239,68,68,0.4)" }}>
+            <p className="text-xs" style={{ color: "rgb(239,68,68)" }}>{error}</p>
+          </div>
+        )}
         <div className="flex gap-3">
-          <button className="glass-btn flex-1" onClick={() => setEditing(false)}>{t("common.cancel")}</button>
-          <button className="glass-btn glass-btn-primary flex-1" onClick={handleSave} disabled={editWants && (!editAddress || !editDesc)}>{t("common.save")}</button>
+          <button className="glass-btn flex-1" onClick={() => setEditing(false)} disabled={saving}>{t("common.cancel")}</button>
+          <button className="glass-btn glass-btn-primary flex-1" onClick={handleSave} disabled={saving || (editWants && (!editAddress || !editDesc))}>{saving ? "..." : t("common.save")}</button>
         </div>
       </div>
     );

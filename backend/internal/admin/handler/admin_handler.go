@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
 	adminMW "github.com/viwo-app/mini-coupon/internal/admin/middleware"
@@ -151,6 +152,83 @@ func (h *AdminHandler) HandleListAdmins(w http.ResponseWriter, r *http.Request) 
 		Admins: admins,
 		Total:  total,
 	})
+}
+
+// HandleGetAdmin returns a single admin user.
+func (h *AdminHandler) HandleGetAdmin(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		appErrors.WriteJSON(w, appErrors.ErrBadRequest)
+		return
+	}
+	admin, err := h.adminSvc.GetAdmin(r.Context(), id)
+	if err != nil {
+		httputil.HandleServiceError(w, err, h.logger, "get_admin")
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, admin)
+}
+
+// HandleUpdateAdmin updates a target admin's profile.
+func (h *AdminHandler) HandleUpdateAdmin(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		appErrors.WriteJSON(w, appErrors.ErrBadRequest)
+		return
+	}
+	var req adminModel.UpdateAdminRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		appErrors.WriteJSON(w, appErrors.ErrBadRequest)
+		return
+	}
+	if errs := validator.ValidateStruct(req); errs != nil {
+		appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithDetails(errs))
+		return
+	}
+	actorID := adminMW.GetAdminUserID(r.Context())
+	actorLevel := adminMW.GetAdminRoleLevel(r.Context())
+
+	updated, err := h.adminSvc.UpdateAdmin(r.Context(), id, &req, actorID, actorLevel)
+	if err != nil {
+		httputil.HandleServiceError(w, err, h.logger, "update_admin")
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, updated)
+}
+
+// HandleDeactivateAdmin marks an admin as deactivated and revokes sessions.
+func (h *AdminHandler) HandleDeactivateAdmin(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		appErrors.WriteJSON(w, appErrors.ErrBadRequest)
+		return
+	}
+	actorID := adminMW.GetAdminUserID(r.Context())
+	actorLevel := adminMW.GetAdminRoleLevel(r.Context())
+
+	if err := h.adminSvc.DeactivateAdmin(r.Context(), id, actorID, actorLevel); err != nil {
+		httputil.HandleServiceError(w, err, h.logger, "deactivate_admin")
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"message": "admin deactivated"})
+}
+
+// HandleListSubordinates returns admins that report to a given admin id.
+func (h *AdminHandler) HandleListSubordinates(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		appErrors.WriteJSON(w, appErrors.ErrBadRequest)
+		return
+	}
+	subs, err := h.adminSvc.ListSubordinates(r.Context(), id)
+	if err != nil {
+		httputil.HandleServiceError(w, err, h.logger, "list_subordinates")
+		return
+	}
+	if subs == nil {
+		subs = []adminModel.AdminUser{}
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{"admins": subs})
 }
 
 // extractIP delegates to the shared middleware implementation.

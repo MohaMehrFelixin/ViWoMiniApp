@@ -13,10 +13,20 @@ import (
 	"github.com/viwo-app/mini-coupon/internal/middleware"
 )
 
-// RegisterAdminRoutes mounts all admin API routes under /api/v1/admin.
-// GetAdminStatusFunc is the signature for checking admin active status from the DB.
+// GetAdminStatusFunc returns the active/suspended/deactivated state of an
+// admin user. Used by the per-request "still active" check below.
 type GetAdminStatusFunc func(ctx context.Context, adminID int64) (string, error)
 
+// RegisterAdminRoutes mounts every admin API route under /api/v1/admin.
+//
+// Authorization model:
+//   - Public auth endpoints are rate-limited but require no session.
+//   - All other routes go through SessionAuth + a per-request "still active"
+//     check (catches admins suspended after they logged in).
+//   - Each individual route gates by RoleLevel via RequireRole.
+//   - Province scoping is enforced inside the service layer for list reads
+//     (the session's province codes are read from context and passed to the
+//     repo's WHERE clause). Single-entity reads also check scope server-side.
 func RegisterAdminRoutes(
 	r chi.Router,
 	h *AdminHandler,
@@ -32,11 +42,11 @@ func RegisterAdminRoutes(
 	r.With(authRL).Post("/auth/request-otp", h.HandleRequestOTP)
 	r.With(authRL).Post("/auth/verify-otp", h.HandleVerifyOTP)
 
-	// ── Protected endpoints (session required + active check) ──
+	// ── Protected endpoints ──
 	r.Group(func(r chi.Router) {
 		r.Use(sessionAuth)
 
-		// Check admin is still active on EVERY request (catches suspended-while-logged-in).
+		// Per-request "still active" check.
 		if getAdminStatusFn != nil {
 			r.Use(func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -51,89 +61,100 @@ func RegisterAdminRoutes(
 			})
 		}
 
-		// Auth
+		// ── Auth ──
 		r.Post("/auth/logout", h.HandleLogout)
 		r.Get("/auth/me", h.HandleGetProfile)
 
-		// Admin user management (L6+ can create subordinates)
+		// ── Admin user management (L6+ only) ──
 		r.With(adminMW.RequireRole(adminModel.RoleSupervisor)).Post("/users", h.HandleCreateAdmin)
 		r.With(adminMW.RequireRole(adminModel.RoleSupervisor)).Get("/users", h.HandleListAdmins)
+		r.With(adminMW.RequireRole(adminModel.RoleSupervisor)).Get("/users/{id}", h.HandleGetAdmin)
+		r.With(adminMW.RequireRole(adminModel.RoleSupervisor)).Put("/users/{id}", h.HandleUpdateAdmin)
+		r.With(adminMW.RequireRole(adminModel.RoleSupervisor)).Delete("/users/{id}", h.HandleDeactivateAdmin)
+		r.With(adminMW.RequireRole(adminModel.RoleSupervisor)).Get("/users/{id}/subordinates", h.HandleListSubordinates)
 
-		// ── Entity management (real handlers) ──
-
-		// Dashboard + Analytics (all roles can view)
+		// ── Dashboard + Analytics ──
 		r.Get("/dashboard/stats", e.HandleDashboardStats)
 		r.Get("/dashboard/redemptions-by-day", a.HandleRedemptionsByDay)
 		r.Get("/dashboard/category-distribution", a.HandleCategoryDistribution)
 		r.Get("/dashboard/center-utilization", a.HandleCenterUtilization)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Get("/dashboard/fraud", s.HandleFraudIndicators)
 
-		// CSV Exports (L1+ can export)
+		// ── CSV Exports (L1+) ──
 		r.With(adminMW.RequireRole(adminModel.RoleViewer)).Get("/export/households", a.HandleExportHouseholds)
 		r.With(adminMW.RequireRole(adminModel.RoleViewer)).Get("/export/redemptions", a.HandleExportRedemptions)
 
-		// Households (L2+ can read, L7+ can suspend)
+		// ── Households ──
 		r.With(adminMW.RequireRole(adminModel.RoleFieldAgent)).Get("/households", e.HandleListHouseholds)
 		r.With(adminMW.RequireRole(adminModel.RoleFieldAgent)).Get("/households/{id}", e.HandleGetHousehold)
 		r.With(adminMW.RequireRole(adminModel.RoleSeniorSupervisor)).Post("/households/{id}/suspend", e.HandleSuspendHousehold)
 		r.With(adminMW.RequireRole(adminModel.RoleSeniorSupervisor)).Post("/households/{id}/reactivate", e.HandleReactivateHousehold)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Put("/households/{id}/notes", e.HandleUpdateHouseholdNotes)
+		r.With(adminMW.RequireRole(adminModel.RoleKYCOfficer)).Put("/households/{id}/kyc-status", e.HandleUpdateHouseholdKYCStatus)
 
-		// Redemptions (L1+ can read, L3+ can resolve disputes)
+		// ── Members ──
+		r.With(adminMW.RequireRole(adminModel.RoleFieldAgent)).Get("/members", e.HandleListMembers)
+		r.With(adminMW.RequireRole(adminModel.RoleKYCOfficer)).Post("/members/{id}/verify-kyc", e.HandleVerifyMemberKYC)
+		r.With(adminMW.RequireRole(adminModel.RoleKYCOfficer)).Post("/members/bulk-verify", e.HandleBulkVerifyMembers)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Delete("/members/{id}", e.HandleDeleteMember)
+
+		// ── Allocations ──
+		r.With(adminMW.RequireRole(adminModel.RoleViewer)).Get("/allocations", e.HandleListAllocations)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Put("/allocations/{id}/adjust", e.HandleAdjustAllocation)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/allocations/{id}/pause", e.HandlePauseAllocation)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/allocations/{id}/resume", e.HandleResumeAllocation)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/allocations/{id}/expire", e.HandleExpireAllocation)
+
+		// ── Redemptions ──
 		r.With(adminMW.RequireRole(adminModel.RoleViewer)).Get("/redemptions", e.HandleListRedemptions)
 		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Post("/redemptions/{id}/resolve-dispute", e.HandleResolveDispute)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/redemptions/{id}/reverse", e.HandleReverseRedemption)
 
-		// Distribution Centers (L2+ can read, L3+ can manage)
+		// ── Distribution Centers ──
 		r.With(adminMW.RequireRole(adminModel.RoleFieldAgent)).Get("/centers", e.HandleListCenters)
+		r.With(adminMW.RequireRole(adminModel.RoleFieldAgent)).Get("/centers/{id}", e.HandleGetCenter)
+		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Post("/centers", e.HandleCreateCenter)
+		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Put("/centers/{id}", e.HandleUpdateCenter)
+		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Put("/centers/{id}/stock", e.HandleUpdateCenterStock)
+		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Delete("/centers/{id}", e.HandleDeactivateCenter)
 
-		// Providers (L3+ can read, L7+ can approve/reject)
+		// ── Power Banks ──
+		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Get("/powerbanks", e.HandleListPowerBanks)
+		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Put("/powerbanks/{id}/status", e.HandleForceSwapStatus)
+
+		// ── Providers ──
 		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Get("/providers", e.HandleListProviders)
 		r.With(adminMW.RequireRole(adminModel.RoleSeniorSupervisor)).Post("/providers/{id}/approve", e.HandleApproveProvider)
 		r.With(adminMW.RequireRole(adminModel.RoleSeniorSupervisor)).Post("/providers/{id}/reject", e.HandleRejectProvider)
 
-		// Support Tickets (L2+ can read, L5+ can resolve)
-		r.With(adminMW.RequireRole(adminModel.RoleFieldAgent)).Get("/tickets", e.HandleListTickets)
-		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/tickets/{id}/resolve", e.HandleResolveTicket)
-
-		// ── Stubs (Phase 3+) ──
-
-		// Members
-		r.With(adminMW.RequireRole(adminModel.RoleFieldAgent)).Get("/members", e.HandleListMembers)
-		r.With(adminMW.RequireRole(adminModel.RoleKYCOfficer)).Post("/members/{id}/verify-kyc", e.HandleVerifyMemberKYC)
-
-		// Allocations
-		r.With(adminMW.RequireRole(adminModel.RoleViewer)).Get("/allocations", e.HandleListAllocations)
-		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Put("/allocations/{id}/adjust", e.HandleAdjustAllocation)
-
-		// Volunteers (L4+ can read, L7+ can approve/reject)
+		// ── Volunteers ──
 		r.With(adminMW.RequireRole(adminModel.RoleKYCOfficer)).Get("/volunteers", e.HandleListVolunteers)
 		r.With(adminMW.RequireRole(adminModel.RoleSeniorSupervisor)).Post("/volunteers/{id}/approve", e.HandleApproveVolunteer)
 		r.With(adminMW.RequireRole(adminModel.RoleSeniorSupervisor)).Post("/volunteers/{id}/reject", e.HandleRejectVolunteer)
 
-		// Catalog Items
+		// ── Tickets ──
+		r.With(adminMW.RequireRole(adminModel.RoleFieldAgent)).Get("/tickets", e.HandleListTickets)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/tickets/{id}/resolve", e.HandleResolveTicket)
+
+		// ── Catalog Items ──
 		r.With(adminMW.RequireRole(adminModel.RoleViewer)).Get("/catalog/items", e.HandleListCatalogItems)
-		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/catalog/items", e.HandleListCatalogItems)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/catalog/items", e.HandleCreateCatalogItem)
 
-		// Notices (L5+ manage)
+		// ── Notices ──
 		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Get("/notices", s.HandleListNotices)
-		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/notices", s.HandleSaveNotices)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/notices", s.HandleCreateNotice)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Put("/notices/reorder", s.HandleReorderNotices)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Put("/notices/{id}", s.HandleUpdateNotice)
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Delete("/notices/{id}", s.HandleDeleteNotice)
+		// Legacy bulk-replace endpoint kept for backward compatibility with the
+		// admin frontend during the rollout to per-record CRUD.
+		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Post("/notices/replace", s.HandleSaveNotices)
 
-		// System Settings (L1+ read, L9+ write)
+		// ── System Settings ──
 		r.With(adminMW.RequireRole(adminModel.RoleViewer)).Get("/settings", s.HandleListSettings)
 		r.With(adminMW.RequireRole(adminModel.RoleCTO)).Put("/settings/{key}", s.HandleUpdateSetting)
 
-		// Fraud Detection (L5+ view)
-		r.With(adminMW.RequireRole(adminModel.RoleOperationsMgr)).Get("/dashboard/fraud", s.HandleFraudIndicators)
-
-		// Power Banks
-		r.With(adminMW.RequireRole(adminModel.RoleDistributionMgr)).Get("/powerbanks", e.HandleListPowerBanks)
+		// ── Audit Trail ──
+		r.With(adminMW.RequireRole(adminModel.RoleViewer)).Get("/audit", s.HandleListAuditLogs)
 	})
-}
-
-// placeholder returns a handler that responds with a "not yet implemented" message.
-// Used for route stubs during phased development.
-func placeholder(endpoint string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		_, _ = w.Write([]byte(`{"error":{"code":"NOT_IMPLEMENTED","message":"` + endpoint + ` is not yet implemented"}}`))
-	}
 }

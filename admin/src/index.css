@@ -1,30 +1,114 @@
+/* Persian font: Vazirmatn from Google Fonts. Must come before any other
+   rules per CSS @import semantics. Falls back to system Persian fonts. */
+@import url("https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
+/* =============================================================================
+   DESIGN TOKENS
+   =============================================================================
+   Mobile-first design system. Colors, spacing, and sizes follow an 8pt grid.
+   Tap targets meet Apple HIG (44pt) and Material Design (48dp) minimums.
+   Safe-area insets are read from env() and exposed as variables so any
+   component can use them via var(--safe-*) without re-deriving the env() call.
+*/
+
 :root {
+  /* Surfaces */
   --bg: #0a0a0f;
+  --bg-elev-1: #11111a;
+  --bg-elev-2: #1a1a2e;
   --bg-card: rgba(255, 255, 255, 0.04);
   --bg-card-hover: rgba(255, 255, 255, 0.07);
   --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  /* Text */
   --text-1: rgba(255, 255, 255, 0.92);
   --text-2: rgba(255, 255, 255, 0.55);
   --text-3: rgba(255, 255, 255, 0.3);
+
+  /* Brand */
   --accent: #3b82f6;
   --accent-hover: #2563eb;
   --success: #22c55e;
   --warning: #f59e0b;
   --danger: #ef4444;
+
+  /* Layout */
   --sidebar-w: 240px;
+  --top-bar-h: 56px;          /* mobile top app bar */
+  --bottom-nav-h: 64px;       /* mobile bottom nav */
+  --tap-min: 44px;            /* Apple HIG minimum tap target */
+
+  /* Safe area insets — exposed so JS/CSS doesn't need to call env() repeatedly.
+     Fall back to 0 on devices without notches. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
+
+/* =============================================================================
+   BASE
+   ============================================================================= */
 
 html {
   font-family: -apple-system, "Inter", system-ui, sans-serif;
   color: var(--text-1);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  /* Mobile fix: prevent the viewport from jumping when the keyboard appears.
+     Use dynamic viewport (dvh) on the root container, not the html element. */
 }
 
-body { margin: 0; min-height: 100vh; }
+/* Persian font activates only when html.font-fa is set (driven by i18n). */
+html.font-fa,
+html.font-fa body {
+  font-family: "Vazirmatn", "Tahoma", "Iranian Sans", -apple-system, system-ui, sans-serif;
+}
+
+/* Number / monospace inputs render LTR even in RTL pages — minus signs and
+   decimal points belong on the trailing side regardless of language. */
+html.rtl input[type="number"],
+html.rtl input[type="tel"],
+html.rtl input[type="email"],
+html.rtl input[inputmode="numeric"],
+html.rtl code,
+html.rtl pre,
+html.rtl .font-mono {
+  direction: ltr;
+  text-align: end;
+}
+
+html.rtl .table th,
+html.rtl .table td {
+  text-align: start;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  /* Prevent horizontal page scroll caused by overflowing children. Each
+     component is responsible for its own internal scroll. */
+  overflow-x: hidden;
+}
+
 * { box-sizing: border-box; }
+
+/* Disable hover-only states on touch devices. They flicker on tap and are
+   useless without a pointer. */
+@media (hover: none) {
+  .btn:hover,
+  a:hover,
+  [role="button"]:hover {
+    background: inherit !important;
+  }
+}
+
+/* =============================================================================
+   COMPONENTS
+   ============================================================================= */
 
 /* Card */
 .card {
@@ -33,54 +117,123 @@ body { margin: 0; min-height: 100vh; }
   border-radius: 12px;
 }
 
-/* Input */
+/* Input — mobile-first sizing
+   - 44px min height per Apple HIG (touch target)
+   - 16px font prevents iOS Safari auto-zoom on focus
+   - shrinks to 14px on >=md screens where zoom isn't an issue */
 .input {
   width: 100%;
-  padding: 10px 14px;
-  background: rgba(255,255,255,0.04);
+  min-height: var(--tap-min);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--text-1);
-  font-size: 14px;
+  font-size: 16px;
+  font-family: inherit;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background-color 0.15s;
+  /* Remove iOS rounded look */
+  -webkit-appearance: none;
+  appearance: none;
 }
-.input:focus { border-color: var(--accent); }
+.input:focus {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.05);
+}
 .input::placeholder { color: var(--text-3); }
+@media (min-width: 768px) {
+  .input {
+    font-size: 14px;
+    min-height: 38px;
+    padding: 10px 14px;
+    border-radius: 8px;
+  }
+}
 
-/* Button */
+/* Button — mobile-first
+   - 44px min height = tap target
+   - clear pressed state via :active (touch devices) */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 13px;
+  gap: 8px;
+  min-height: var(--tap-min);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-1);
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  white-space: nowrap;
 }
 .btn:hover { background: var(--bg-card-hover); }
+.btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:disabled:active { transform: none; }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 .btn-primary:hover { background: var(--accent-hover); }
-.btn-danger { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: var(--danger); }
+.btn-primary:active { background: var(--accent-hover); }
+
+.btn-danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--danger);
+}
+.btn-danger:hover { background: rgba(239, 68, 68, 0.2); }
+
+@media (min-width: 768px) {
+  .btn {
+    min-height: 36px;
+    padding: 8px 16px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+}
+
+/* Compact button — smaller variant for icon-only or chip-like buttons.
+   STILL respects 44px tap target via padding around the visible chrome. */
+.btn-icon {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text-2);
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-icon:hover { background: var(--bg-card-hover); color: var(--text-1); }
+.btn-icon:active { background: var(--bg-card); }
 
 /* Badge */
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 9999px;
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
-/* Table */
+/* Table — desktop only. On mobile, list items render as cards via PageShell. */
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .table th {
   text-align: start; padding: 10px 16px; color: var(--text-2);
@@ -88,4 +241,199 @@ body { margin: 0; min-height: 100vh; }
   letter-spacing: 0.05em; border-bottom: 1px solid var(--border);
 }
 .table td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.table tr:hover td { background: rgba(255,255,255,0.02); }
+@media (hover: hover) {
+  .table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+}
+
+/* =============================================================================
+   MOBILE LAYOUT UTILITIES
+   ============================================================================= */
+
+/* Top app bar — mobile only. Sticky to top with safe-area top padding. */
+.mobile-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: calc(var(--top-bar-h) + var(--safe-top));
+  padding-top: var(--safe-top);
+  padding-inline: 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  /* Use backdrop-filter so content scrolling underneath is partially visible */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Bottom nav — mobile only. Sticky to bottom with safe-area bottom padding. */
+.mobile-bottomnav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  height: calc(var(--bottom-nav-h) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+  background: var(--bg-elev-1);
+  border-top: 1px solid var(--border);
+  /* Drop shadow upward to lift it visually from page content */
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Bottom drawer / sheet — slides up from bottom on mobile, used for filters,
+   action menus, and modals. */
+.mobile-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.mobile-sheet[data-open="true"] { pointer-events: auto; }
+.mobile-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.mobile-sheet[data-open="true"] .mobile-sheet-backdrop { opacity: 1; }
+.mobile-sheet-content {
+  position: relative;
+  background: var(--bg-elev-2);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  max-height: 92dvh;
+  overflow-y: auto;
+  padding-bottom: var(--safe-bottom);
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.mobile-sheet[data-open="true"] .mobile-sheet-content {
+  transform: translateY(0);
+}
+
+/* Drag handle bar at the top of bottom sheets — visual affordance only. */
+.sheet-handle {
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+  background: var(--bg-elev-2);
+  z-index: 1;
+}
+.sheet-handle::after {
+  content: "";
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-3);
+}
+
+/* Full-screen mobile sheet variant (for detail panels and big modals).
+   Slides up to occupy the full screen leaving only the safe area. */
+.mobile-fullsheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+.mobile-fullsheet[data-open="true"] {
+  transform: translateY(0);
+}
+
+/* Sticky bottom action bar — used inside detail panels and form modals so the
+   primary action stays reachable even with the keyboard open. */
+.mobile-action-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px calc(12px + var(--safe-bottom));
+  background: var(--bg-elev-2);
+  border-top: 1px solid var(--border);
+  z-index: 10;
+}
+.mobile-action-bar > .btn { flex: 1; }
+
+/* =============================================================================
+   ANIMATIONS
+   ============================================================================= */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Respect prefers-reduced-motion. Critical for a11y — vestibular disorders
+   are real and disabling animations is the right call. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* =============================================================================
+   ACCESSIBILITY HELPERS
+   ============================================================================= */
+
+/* Visually hidden but accessible to screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Visible focus ring — crucial for keyboard navigation. Tailwind's default
+   focus is sometimes hidden by our custom backgrounds; this ensures it. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+button:focus-visible,
+a:focus-visible,
+.input:focus-visible {
+  outline-offset: 2px;
+}
+
+/* =============================================================================
+   SCROLLBARS — slim and themed (mostly invisible on mobile)
+   ============================================================================= */
+
+@media (min-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

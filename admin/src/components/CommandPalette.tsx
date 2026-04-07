@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Search, LayoutDashboard, Home, Receipt, TicketCheck, Store, ShieldCheck, ScrollText, Heart, Settings, Megaphone } from "lucide-react";
 
 interface Command {
@@ -11,6 +12,7 @@ interface Command {
 }
 
 export function CommandPalette() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
@@ -18,16 +20,16 @@ export function CommandPalette() {
   const navigate = useNavigate();
 
   const commands: Command[] = [
-    { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={16} />, action: () => navigate("/"), keywords: "home overview stats" },
-    { id: "households", label: "Households", icon: <Home size={16} />, action: () => navigate("/households"), keywords: "family members register" },
-    { id: "redemptions", label: "Redemptions", icon: <Receipt size={16} />, action: () => navigate("/redemptions"), keywords: "coupon transaction redeem dispute" },
-    { id: "tickets", label: "Support Tickets", icon: <TicketCheck size={16} />, action: () => navigate("/tickets"), keywords: "support issue bug report help" },
-    { id: "providers", label: "Providers", icon: <Store size={16} />, action: () => navigate("/providers"), keywords: "distributor store shop service" },
-    { id: "volunteers", label: "Volunteers", icon: <Heart size={16} />, action: () => navigate("/volunteers"), keywords: "volunteer specialty help" },
-    { id: "users", label: "Admin Users", icon: <ShieldCheck size={16} />, action: () => navigate("/users"), keywords: "admin role permission access" },
-    { id: "notices", label: "Notices", icon: <Megaphone size={16} />, action: () => navigate("/notices"), keywords: "notice banner alert announcement" },
-    { id: "audit", label: "Audit Trail", icon: <ScrollText size={16} />, action: () => navigate("/audit"), keywords: "log history action track" },
-    { id: "settings", label: "Settings", icon: <Settings size={16} />, action: () => navigate("/settings"), keywords: "config system allocation rate limit" },
+    { id: "dashboard", label: t("nav.dashboard"), icon: <LayoutDashboard size={16} />, action: () => navigate("/"), keywords: "home overview stats داشبورد" },
+    { id: "households", label: t("nav.households"), icon: <Home size={16} />, action: () => navigate("/households"), keywords: "family members register خانوار" },
+    { id: "redemptions", label: t("nav.redemptions"), icon: <Receipt size={16} />, action: () => navigate("/redemptions"), keywords: "coupon transaction redeem dispute استفاده" },
+    { id: "tickets", label: t("nav.tickets"), icon: <TicketCheck size={16} />, action: () => navigate("/tickets"), keywords: "support issue bug report help تیکت" },
+    { id: "providers", label: t("nav.providers"), icon: <Store size={16} />, action: () => navigate("/providers"), keywords: "distributor store shop service تأمین" },
+    { id: "volunteers", label: t("nav.volunteers"), icon: <Heart size={16} />, action: () => navigate("/volunteers"), keywords: "volunteer specialty help داوطلب" },
+    { id: "users", label: t("nav.users"), icon: <ShieldCheck size={16} />, action: () => navigate("/users"), keywords: "admin role permission access ادمین" },
+    { id: "notices", label: t("nav.notices"), icon: <Megaphone size={16} />, action: () => navigate("/notices"), keywords: "notice banner alert announcement اطلاعیه" },
+    { id: "audit", label: t("nav.audit"), icon: <ScrollText size={16} />, action: () => navigate("/audit"), keywords: "log history action track گزارش ممیزی" },
+    { id: "settings", label: t("nav.settings"), icon: <Settings size={16} />, action: () => navigate("/settings"), keywords: "config system allocation rate limit تنظیمات" },
   ];
 
   const filtered = query.trim()
@@ -97,7 +99,7 @@ export function CommandPalette() {
               value={query}
               onChange={(e) => { setQuery(e.target.value); setSelected(0); }}
               onKeyDown={handleKeyDown}
-              placeholder="Search pages, actions..."
+              placeholder={t("commandPalette.placeholder")}
               className="flex-1 bg-transparent text-sm outline-none"
               style={{ color: "var(--text-1)" }}
             />
@@ -108,7 +110,7 @@ export function CommandPalette() {
           <div className="max-h-[300px] overflow-y-auto py-1">
             {filtered.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm" style={{ color: "var(--text-3)" }}>
-                No results found
+                {t("commandPalette.noResults")}
               </div>
             ) : (
               filtered.map((cmd, i) => (
@@ -131,9 +133,9 @@ export function CommandPalette() {
 
           {/* Footer */}
           <div className="flex items-center gap-4 border-t border-[var(--border)] px-4 py-2">
-            <span className="text-[10px]" style={{ color: "var(--text-3)" }}>↑↓ navigate</span>
-            <span className="text-[10px]" style={{ color: "var(--text-3)" }}>↵ select</span>
-            <span className="text-[10px]" style={{ color: "var(--text-3)" }}>esc close</span>
+            <span className="text-[10px]" style={{ color: "var(--text-3)" }}>↑↓ {t("commandPalette.navigate")}</span>
+            <span className="text-[10px]" style={{ color: "var(--text-3)" }}>↵ {t("commandPalette.selectKey")}</span>
+            <span className="text-[10px]" style={{ color: "var(--text-3)" }}>{t("commandPalette.esc")}</span>
           </div>
         </div>
       </div>

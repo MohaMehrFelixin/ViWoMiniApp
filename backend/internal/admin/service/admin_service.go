@@ -17,27 +17,44 @@ import (
 
 // AdminService handles admin authentication, user management, and audit logging.
 type AdminService struct {
-	adminRepo repository.AdminRepository
-	auditRepo repository.AuditRepository
-	rdb       *redis.Client
-	idGen     *idgen.Generator
-	logger    *zap.Logger
+	adminRepo   repository.AdminRepository
+	auditRepo   repository.AuditRepository
+	rdb         *redis.Client
+	idGen       *idgen.Generator
+	logger      *zap.Logger
+	environment string // "development" | "production" — controls OTP visibility
 }
 
-// NewAdminService creates a new admin service.
+// NewAdminService creates a new admin service. The environment determines
+// whether the full OTP is logged for development convenience.
 func NewAdminService(
 	adminRepo repository.AdminRepository,
 	auditRepo repository.AuditRepository,
 	rdb *redis.Client,
 	idGen *idgen.Generator,
+	environment string,
 	logger *zap.Logger,
 ) *AdminService {
 	return &AdminService{
-		adminRepo: adminRepo,
-		auditRepo: auditRepo,
-		rdb:       rdb,
-		idGen:     idGen,
-		logger:    logger,
+		adminRepo:   adminRepo,
+		auditRepo:   auditRepo,
+		rdb:         rdb,
+		idGen:       idGen,
+		environment: environment,
+		logger:      logger,
+	}
+}
+
+// audit writes an audit entry, surfacing failures (FIX B4). Mirrors the helper
+// in EntityService.
+func (s *AdminService) audit(ctx context.Context, entry *adminModel.AuditLog) {
+	if err := s.auditRepo.Log(ctx, entry); err != nil {
+		s.logger.Error("audit_log_failed",
+			zap.String("action", entry.Action),
+			zap.String("entity_type", entry.EntityType),
+			zap.Int64("admin_id", entry.AdminID),
+			zap.Error(err),
+		)
 	}
 }
 
@@ -79,12 +96,24 @@ func (s *AdminService) RequestOTP(ctx context.Context, nationalCode string) (str
 		return "", 0, appErrors.ErrServiceUnavailable
 	}
 
-	// TODO: Send OTP via SMS to admin.Phone
-	// In dev, log masked OTP hint for debugging; NEVER log the actual OTP.
-	s.logger.Info("admin OTP generated",
-		zap.String("national_code", nationalCode[:4]+"******"),
-		zap.String("otp_hint", otp[:2]+"****"),
-	)
+	// SMS delivery: in production this would call Kavenegar/Twilio. The SMS
+	// integration is a separate scoped task — for now we always log a hint
+	// at INFO and, in development only, the full OTP at WARN level so local
+	// admins can log in without shell access to Redis.
+	//
+	// SECURITY: NEVER enable the dev WARN log in production. The environment
+	// flag is checked explicitly so a misconfigured ENV var doesn't leak OTPs.
+	if s.environment == "development" {
+		s.logger.Warn("[DEV] admin OTP — DO NOT use in production",
+			zap.String("national_code", nationalCode),
+			zap.String("otp", otp),
+		)
+	} else {
+		s.logger.Info("admin OTP generated",
+			zap.String("national_code", nationalCode[:4]+"******"),
+		)
+		// TODO(prod): Replace with SMS provider call. Tracked in ProdRollout.
+	}
 
 	// Mask phone for response: 09xx***xx45
 	masked := maskPhone(admin.Phone)
@@ -153,7 +182,7 @@ func (s *AdminService) VerifyOTP(ctx context.Context, nationalCode, otp, clientI
 	}
 
 	// Audit log: login.
-	_ = s.auditRepo.Log(ctx, &adminModel.AuditLog{
+	s.audit(ctx, &adminModel.AuditLog{
 		AdminID:    admin.ID,
 		Action:     "login",
 		EntityType: "admin_user",
@@ -172,7 +201,7 @@ func (s *AdminService) VerifyOTP(ctx context.Context, nationalCode, otp, clientI
 
 // Logout destroys the current session.
 func (s *AdminService) Logout(ctx context.Context, session *adminModel.AdminSession) error {
-	_ = s.auditRepo.Log(ctx, &adminModel.AuditLog{
+	s.audit(ctx, &adminModel.AuditLog{
 		AdminID:    session.AdminID,
 		Action:     "logout",
 		EntityType: "admin_user",
@@ -243,7 +272,7 @@ func (s *AdminService) CreateAdmin(ctx context.Context, req *adminModel.CreateAd
 	}
 
 	// Audit.
-	_ = s.auditRepo.Log(ctx, &adminModel.AuditLog{
+	s.audit(ctx, &adminModel.AuditLog{
 		AdminID:    actorID,
 		Action:     "create",
 		EntityType: "admin_user",
@@ -257,6 +286,105 @@ func (s *AdminService) CreateAdmin(ctx context.Context, req *adminModel.CreateAd
 // ListAdmins returns a paginated list of admin users.
 func (s *AdminService) ListAdmins(ctx context.Context, offset, limit int) ([]adminModel.AdminUser, int, error) {
 	return s.adminRepo.GetPaginated(ctx, offset, limit)
+}
+
+// GetAdmin returns a single admin user by id.
+func (s *AdminService) GetAdmin(ctx context.Context, id int64) (*adminModel.AdminUser, error) {
+	a, err := s.adminRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if a == nil {
+		return nil, appErrors.ErrNotFound
+	}
+	return a, nil
+}
+
+// UpdateAdmin updates a target admin's profile. Only allowed if actorLevel
+// can manage targetLevel (downward-only rule).
+func (s *AdminService) UpdateAdmin(ctx context.Context, targetID int64, req *adminModel.UpdateAdminRequest, actorID int64, actorLevel int) (*adminModel.AdminUser, error) {
+	target, err := s.adminRepo.GetByID(ctx, targetID)
+	if err != nil {
+		return nil, err
+	}
+	if target == nil {
+		return nil, appErrors.ErrNotFound
+	}
+	// Hierarchy enforcement: actor must be strictly higher than the CURRENT
+	// level of the target AND any new role level being assigned.
+	if !adminModel.CanManageRole(actorLevel, target.RoleLevel) {
+		return nil, appErrors.ErrForbidden.WithMessage("Cannot edit admin at same or higher level")
+	}
+	if req.RoleLevel != nil {
+		if !adminModel.CanManageRole(actorLevel, *req.RoleLevel) {
+			return nil, appErrors.ErrForbidden.WithMessage("Cannot promote to same or higher level than your own")
+		}
+		target.RoleLevel = *req.RoleLevel
+		title := adminModel.RoleTitles[*req.RoleLevel]
+		if title != "" {
+			target.RoleTitle = title
+		}
+	}
+	if req.FullName != nil {
+		target.FullName = *req.FullName
+	}
+	if req.Phone != nil {
+		target.Phone = *req.Phone
+	}
+	if req.ProvinceCodes != nil {
+		target.ProvinceCodes = req.ProvinceCodes
+	}
+	if req.Status != nil {
+		target.Status = *req.Status
+	}
+	if err := s.adminRepo.Update(ctx, target); err != nil {
+		return nil, err
+	}
+
+	// If the admin was deactivated/suspended, revoke all their active
+	// sessions immediately so they can't continue operating.
+	if target.Status != "active" {
+		_ = adminMW.DestroyAllSessions(ctx, s.rdb, target.ID)
+	}
+
+	s.audit(ctx, &adminModel.AuditLog{
+		AdminID:    actorID,
+		Action:     "update",
+		EntityType: "admin_user",
+		EntityID:   &target.ID,
+		NewValue:   target,
+	})
+	return target, nil
+}
+
+// DeactivateAdmin sets a user's status to deactivated and destroys their sessions.
+func (s *AdminService) DeactivateAdmin(ctx context.Context, targetID, actorID int64, actorLevel int) error {
+	target, err := s.adminRepo.GetByID(ctx, targetID)
+	if err != nil {
+		return err
+	}
+	if target == nil {
+		return appErrors.ErrNotFound
+	}
+	if !adminModel.CanManageRole(actorLevel, target.RoleLevel) {
+		return appErrors.ErrForbidden.WithMessage("Cannot deactivate admin at same or higher level")
+	}
+	if err := s.adminRepo.UpdateStatus(ctx, targetID, "deactivated"); err != nil {
+		return err
+	}
+	_ = adminMW.DestroyAllSessions(ctx, s.rdb, targetID)
+	s.audit(ctx, &adminModel.AuditLog{
+		AdminID:    actorID,
+		Action:     "deactivate",
+		EntityType: "admin_user",
+		EntityID:   &targetID,
+	})
+	return nil
+}
+
+// ListSubordinates returns the direct reports of a given admin.
+func (s *AdminService) ListSubordinates(ctx context.Context, parentID int64) ([]adminModel.AdminUser, error) {
+	return s.adminRepo.GetByParent(ctx, parentID)
 }
 
 // ─── Helpers ───

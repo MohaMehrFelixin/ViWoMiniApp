@@ -187,11 +187,14 @@ export function NoticesPage() {
   const handleAdd = async () => {
     setCreating(true);
     try {
+      // Create as a draft (active=false). Backend force-disables blank
+      // notices so they never reach the public banner cache; the user fills
+      // in text + toggles active before saving via PUT.
       const created = await createNotice({
         text: "",
         text_fa: "",
         type: "info",
-        active: true,
+        active: false,
       });
       setNotices((prev) => [...prev, created]);
       setDirty((prev) => new Set(prev).add(created.id));

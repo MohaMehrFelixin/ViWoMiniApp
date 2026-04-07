@@ -141,6 +141,62 @@ func GetSession(ctx context.Context, rdb *redis.Client, token, clientIP, clientU
 	return &session, nil
 }
 
+// getSessionDiagnostic is a wrapper around GetSession that also returns a
+// short reason string when the session is rejected. The middleware uses this
+// to log *why* a request was 401'd (Redis miss vs IP rebind vs UA rebind vs
+// absolute-lifetime cap) without leaking that detail to the client.
+//
+// Returns:
+//   - (session, "", nil)        — happy path
+//   - (nil, reason, nil)        — rejected; reason is one of: redis_miss,
+//                                 absolute_lifetime, ip_mismatch, ua_mismatch
+//   - (nil, "", err)            — Redis I/O or unmarshal error
+func getSessionDiagnostic(ctx context.Context, rdb *redis.Client, token, clientIP, clientUA string) (*adminModel.AdminSession, string, error) {
+	key := sessionPrefix + token
+	data, err := rdb.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, "redis_miss", nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("get session: %w", err)
+	}
+
+	var session adminModel.AdminSession
+	if err := json.Unmarshal(data, &session); err != nil {
+		return nil, "", fmt.Errorf("unmarshal session: %w", err)
+	}
+
+	if time.Since(session.CreatedAt) > sessionAbsoluteMax {
+		_ = rdb.Del(ctx, key).Err()
+		return nil, "absolute_lifetime", nil
+	}
+
+	if !ipMatches(session.IPAddress, clientIP) {
+		return nil, "ip_mismatch", nil
+	}
+
+	if session.UserAgent != "" {
+		if clientUA == "" || subtle.ConstantTimeCompare([]byte(session.UserAgent), []byte(clientUA)) != 1 {
+			return nil, "ua_mismatch", nil
+		}
+	}
+
+	// Sliding expiry: refresh TTL on activity.
+	session.LastActiveAt = time.Now().UTC()
+	refreshData, _ := json.Marshal(session)
+	_ = rdb.Set(ctx, key, refreshData, sessionTTL).Err()
+
+	return &session, "", nil
+}
+
+// truncate caps a string to n runes for log readability.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
 // DestroySession removes a session from Redis.
 func DestroySession(ctx context.Context, rdb *redis.Client, token string) error {
 	return rdb.Del(ctx, sessionPrefix+token).Err()
@@ -259,34 +315,52 @@ func LockAccount(ctx context.Context, rdb *redis.Client, nationalCode string, fa
 func SessionAuth(rdb *redis.Client, logger *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// All 401 paths log a structured "reason" so we can diagnose
+			// "logout on its own" reports without re-instrumenting later.
+			// The client IP/UA stay out of error responses (no leaks) but go
+			// into the logs.
+			clientIP := ExtractIP(r)
+			clientUA := r.UserAgent()
+			path := r.URL.Path
+
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
+				logger.Info("session reject", zap.String("reason", "no_auth_header"),
+					zap.String("path", path), zap.String("ip", clientIP))
 				appErrors.WriteJSON(w, appErrors.ErrUnauthorized)
 				return
 			}
 
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || !strings.EqualFold(parts[0], "session") {
+				logger.Info("session reject", zap.String("reason", "bad_auth_format"),
+					zap.String("path", path), zap.String("ip", clientIP))
 				appErrors.WriteJSON(w, appErrors.ErrUnauthorized.WithMessage("Invalid authorization format"))
 				return
 			}
 
 			token := parts[1]
 			if len(token) != sessionTokenBytes*2 { // hex-encoded length
+				logger.Info("session reject", zap.String("reason", "bad_token_length"),
+					zap.Int("len", len(token)),
+					zap.String("path", path), zap.String("ip", clientIP))
 				appErrors.WriteJSON(w, appErrors.ErrUnauthorized.WithMessage("Invalid session token"))
 				return
 			}
 
-			clientIP := ExtractIP(r)
-			clientUA := r.UserAgent()
-
-			session, err := GetSession(r.Context(), rdb, token, clientIP, clientUA)
+			session, reason, err := getSessionDiagnostic(r.Context(), rdb, token, clientIP, clientUA)
 			if err != nil {
-				logger.Error("session validation error", zap.Error(err))
+				logger.Error("session validation error", zap.Error(err),
+					zap.String("path", path), zap.String("ip", clientIP))
 				appErrors.WriteJSON(w, appErrors.ErrInternalServer)
 				return
 			}
 			if session == nil {
+				logger.Info("session reject", zap.String("reason", reason),
+					zap.String("path", path),
+					zap.String("ip", clientIP),
+					zap.String("ua", truncate(clientUA, 80)),
+					zap.String("token_prefix", token[:8]))
 				appErrors.WriteJSON(w, appErrors.ErrUnauthorized.WithMessage("Session expired or invalid"))
 				return
 			}

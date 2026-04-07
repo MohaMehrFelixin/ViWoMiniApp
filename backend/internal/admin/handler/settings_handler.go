@@ -157,14 +157,15 @@ func (h *SettingsHandler) HandleListNotices(w http.ResponseWriter, r *http.Reque
 
 // HandleCreateNotice creates a single notice and rebuilds the cache.
 // Body shape: { id?, text, text_fa, type, link?, active, sort_order? }
+//
+// The admin UX is "create empty row, fill in inline, save". So we accept
+// empty text/text_fa here and just force active=false on a draft so the
+// public cache (which only includes active=true) never picks up a blank
+// banner. The follow-up PUT validates non-empty text before activation.
 func (h *SettingsHandler) HandleCreateNotice(w http.ResponseWriter, r *http.Request) {
 	var notice repository.Notice
 	if err := json.NewDecoder(r.Body).Decode(&notice); err != nil {
 		appErrors.WriteJSON(w, appErrors.ErrBadRequest)
-		return
-	}
-	if notice.Text == "" || notice.TextFa == "" {
-		appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("text and text_fa required"))
 		return
 	}
 	if notice.Type == "" {
@@ -173,6 +174,11 @@ func (h *SettingsHandler) HandleCreateNotice(w http.ResponseWriter, r *http.Requ
 	if notice.Type != "info" && notice.Type != "warning" && notice.Type != "promo" {
 		appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("type must be info|warning|promo"))
 		return
+	}
+	// Empty drafts are allowed but cannot be active — the cache rebuild only
+	// pulls active=true rows so this keeps the public banner clean.
+	if notice.Text == "" || notice.TextFa == "" {
+		notice.Active = false
 	}
 	if notice.ID == "" {
 		notice.ID = "n_" + strconv.FormatInt(adminMW.GetAdminUserID(r.Context()), 10) + "_" + strconv.FormatInt(timeNowUnixNano(), 10)
@@ -209,6 +215,11 @@ func (h *SettingsHandler) HandleUpdateNotice(w http.ResponseWriter, r *http.Requ
 	notice.ID = id
 	if notice.Type != "" && notice.Type != "info" && notice.Type != "warning" && notice.Type != "promo" {
 		appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("type must be info|warning|promo"))
+		return
+	}
+	// Refuse to activate a blank notice — drafts must have content first.
+	if notice.Active && (notice.Text == "" || notice.TextFa == "") {
+		appErrors.WriteJSON(w, appErrors.ErrBadRequest.WithMessage("text and text_fa are required to activate a notice"))
 		return
 	}
 

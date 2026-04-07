@@ -9,7 +9,7 @@ import { extractErrorMessage } from "../lib/api-error";
 import type { Household } from "../lib/types";
 import { IconIdCard, IconUser, IconHouse, IconCheck, IconShield } from "../components/Icons";
 import { ShamsiDatePicker } from "../components/ShamsiDatePicker";
-import { getContact, getTelegramUser, disableClosingConfirmation } from "../lib/telegram";
+import { getContact, getTelegramUser, disableClosingConfirmation, getLocation } from "../lib/telegram";
 
 const TOTAL_STEPS = 8;
 const ACTIVE_DOT_STEPS = 7; // Steps 1-7 shown as dots (step 0 Welcome has no dots)
@@ -782,6 +782,11 @@ function StepDistributorAndSubmit({
     try {
       setDistributor(!!wants, storeAddr, storeDesc);
 
+      // Collect user location for registration
+      const loc = await getLocation();
+      const userLat = loc?.lat ?? 0;
+      const userLng = loc?.lng ?? 0;
+
       // Verify identity via Finnotech (Shahkar + NID) before registration
       if (kycTrackId) {
         const idResult = await verifyIdentity({
@@ -810,8 +815,8 @@ function StepDistributorAndSubmit({
         gender,
         mobile,
         address,
-        lat: 0,
-        lng: 0,
+        lat: userLat,
+        lng: userLng,
         kyc_track_id: kycTrackId,
       });
 

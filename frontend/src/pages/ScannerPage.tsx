@@ -35,14 +35,23 @@ const VALID_CATEGORIES = ["water", "food", "fuel", "hygiene", "medical", "energy
 function isValidProviderQR(data: unknown): data is ProviderQRData {
   if (typeof data !== "object" || data === null) return false;
   const d = data as Record<string, unknown>;
-  return (
-    typeof d.provider_id === "string" &&
-    typeof d.provider_name === "string" &&
-    typeof d.category === "string" &&
-    VALID_CATEGORIES.includes(d.category as string) &&
-    typeof d.amount === "string" &&
-    typeof d.distribution_point_id === "number"
-  );
+  if (
+    typeof d.provider_id !== "string" ||
+    typeof d.provider_name !== "string" ||
+    typeof d.category !== "string" ||
+    !VALID_CATEGORIES.includes(d.category as string) ||
+    typeof d.amount !== "string" ||
+    typeof d.distribution_point_id !== "number"
+  ) return false;
+  // Default missing display fields to empty string so UI never shows "undefined"
+  if (typeof d.provider_name_fa !== "string") (d as Record<string, unknown>).provider_name_fa = d.provider_name;
+  if (typeof d.provider_type !== "string") (d as Record<string, unknown>).provider_type = "";
+  if (typeof d.provider_type_fa !== "string") (d as Record<string, unknown>).provider_type_fa = d.provider_type ?? "";
+  if (typeof d.provider_address !== "string") (d as Record<string, unknown>).provider_address = "";
+  if (typeof d.provider_address_fa !== "string") (d as Record<string, unknown>).provider_address_fa = d.provider_address ?? "";
+  if (typeof d.item_description !== "string") (d as Record<string, unknown>).item_description = "";
+  if (typeof d.item_description_fa !== "string") (d as Record<string, unknown>).item_description_fa = d.item_description ?? "";
+  return true;
 }
 
 export function ScannerPage() {
@@ -51,6 +60,7 @@ export function ScannerPage() {
   const isFa = i18n.language === "fa";
 
   const [step, setStep] = useState<Step>("scanning");
+  const [scannerDismissed, setScannerDismissed] = useState(false);
   const [qrData, setQrData] = useState<ProviderQRData | null>(null);
   const [txCode, setTxCode] = useState("");
   const [txTime, setTxTime] = useState("");
@@ -116,13 +126,16 @@ export function ScannerPage() {
     const startScan = async () => {
       const result = await scanQR(t("scanner.instruction"));
       if (result) {
+        setScannerDismissed(false);
         processQRText(result);
       } else if (!canUse("6.4")) {
         // Very old Telegram — show manual entry hint
         setErrorMsg(t("scanner.cameraError"));
         setStep("error");
+      } else {
+        // User dismissed the scanner — show retry UI instead of stuck spinner
+        setScannerDismissed(true);
       }
-      // If result is null and canUse("6.4"), user dismissed the scanner — stay on scanning step
     };
 
     startScan();
@@ -205,11 +218,33 @@ export function ScannerPage() {
     return (
       <div className="flex flex-col items-center justify-center p-6" style={{ minHeight: "calc(100vh - 100px)" }}>
         <div className="glass glass-prominent flex flex-col items-center gap-5 p-8 text-center">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-white/10" style={{ borderTopColor: "var(--accent)" }} />
-          <div>
-            <h1 className="text-primary text-lg font-semibold">{t("scanner.title")}</h1>
-            <p className="text-secondary mt-1 text-sm">{t("scanner.pointCamera")}</p>
-          </div>
+          {scannerDismissed ? (
+            <>
+              <div>
+                <h1 className="text-primary text-lg font-semibold">{t("scanner.title")}</h1>
+                <p className="text-secondary mt-1 text-sm">{t("scanner.pointCamera")}</p>
+              </div>
+              <button
+                className="glass-btn glass-btn-primary"
+                onClick={() => {
+                  setScannerDismissed(false);
+                  // Re-trigger the scanning effect by toggling step
+                  setStep("error");
+                  setTimeout(() => setStep("scanning"), 0);
+                }}
+              >
+                {t("scanner.scanAgain")}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-white/10" style={{ borderTopColor: "var(--accent)" }} />
+              <div>
+                <h1 className="text-primary text-lg font-semibold">{t("scanner.title")}</h1>
+                <p className="text-secondary mt-1 text-sm">{t("scanner.pointCamera")}</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );

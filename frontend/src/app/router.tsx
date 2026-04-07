@@ -5,6 +5,7 @@ import { QRDisplayPage } from "../pages/QRDisplayPage";
 import { ProfilePage, ProfileInfoPage, ProfileHouseholdPage, ProfileHistoryPage, ProfileCollaborationPage } from "../pages/ProfilePage";
 import { MapPage } from "../pages/MapPage";
 import { ScannerPage } from "../pages/ScannerPage";
+import { ProviderPage } from "../pages/ProviderPage";
 
 export function AppRouter() {
   return (
@@ -19,6 +20,7 @@ export function AppRouter() {
       <Route path="/profile/collaboration" element={<ProfileCollaborationPage />} />
       <Route path="/map" element={<MapPage />} />
       <Route path="/scanner" element={<ScannerPage />} />
+      <Route path="/provider" element={<ProviderPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

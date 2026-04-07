@@ -170,7 +170,9 @@ export function CategoryDetailPage() {
         </div>
       )}
 
-      {category === "food" && <FoodBasket />}
+      {(category === "food" || category === "hygiene" || category === "medical") && (
+        <FoodBasket category={category as CouponCategory} />
+      )}
       {category === "energy" && <PowerBankCard />}
     </div>
   );

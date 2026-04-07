@@ -80,17 +80,27 @@ export function hideSecondaryButton() {
 
 // ─── SettingsButton ──────────────────────────────────────
 
+let _settingsHandler: (() => void) | null = null;
+
 export function showSettingsButton(onClick: () => void) {
   if (!canUse("7.0")) return;
   const btn = tg()?.SettingsButton;
   if (!btn) return;
+  // Remove previous handler to prevent accumulation
+  if (_settingsHandler) btn.offClick(_settingsHandler);
+  _settingsHandler = onClick;
   btn.onClick(onClick);
   btn.show();
 }
 
 export function hideSettingsButton() {
   const btn = tg()?.SettingsButton;
-  btn?.hide();
+  if (!btn) return;
+  if (_settingsHandler) {
+    btn.offClick(_settingsHandler);
+    _settingsHandler = null;
+  }
+  btn.hide();
 }
 
 // ─── Popups ──────────────────────────────────────────────

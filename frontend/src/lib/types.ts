@@ -211,6 +211,109 @@ export type CouponCategory =
   | "medical"
   | "energy";
 
+// --- Catalog Items (admin-defined products per category) ---
+
+export interface CatalogUnit {
+  code: string;
+  name: string;
+  name_fa: string;
+}
+
+export interface CatalogItemWithUnit {
+  id: number;
+  category: CouponCategory;
+  name: string;
+  name_fa: string;
+  icon: string;
+  scope: "national" | "regional";
+  region?: string;
+  default_amount: string;
+  sort_order: number;
+  is_active: boolean;
+  unit: CatalogUnit;
+}
+
+export interface ItemAllocationView {
+  item_id: number;
+  category: string;
+  name: string;
+  name_fa: string;
+  icon: string;
+  scope: string;
+  region?: string;
+  unit_code: string;
+  unit_name: string;
+  unit_name_fa: string;
+  allocated_amount: string;
+  used_amount: string;
+}
+
+export interface CatalogItemsResponse {
+  items: CatalogItemWithUnit[];
+}
+
+export interface ItemAllocationsResponse {
+  national: ItemAllocationView[];
+  regional: ItemAllocationView[];
+}
+
+// --- Provider / Distributor ---
+
+export interface ProviderProfile {
+  id: number;
+  name: string;
+  name_fa: string;
+  type: "distributor" | "service_provider";
+  service_type: string; // e.g. "distribution_assistant", "grocery", "bakery"
+  status: "pending" | "approved" | "rejected" | "suspended";
+  store_address: string;
+  store_address_fa: string;
+  distribution_point_id: number;
+  created_at: string;
+}
+
+export interface ProviderSession {
+  id: number;
+  provider_id: number;
+  opened_at: string;
+  closed_at: string | null;
+  duration_minutes: number;
+}
+
+export interface ProviderCategoryStat {
+  category: CouponCategory;
+  count: number;
+  total_amount: string;
+}
+
+export interface ProviderStats {
+  today: {
+    transactions: number;
+    by_category: ProviderCategoryStat[];
+  };
+  total: {
+    transactions: number;
+    days_worked: number;
+    total_hours: number;
+    by_category: ProviderCategoryStat[];
+  };
+  current_session: ProviderSession | null;
+}
+
+export interface ProviderProfileResponse {
+  provider: ProviderProfile;
+}
+
+export interface ProviderSessionResponse {
+  session: ProviderSession;
+}
+
+export interface ProviderStatsResponse {
+  stats: ProviderStats;
+}
+
+// --- Power Bank ---
+
 export interface PowerBankSwap {
   id: number;
   household_id: number;

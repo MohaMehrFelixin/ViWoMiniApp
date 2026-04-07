@@ -42,7 +42,8 @@
     "home": "Home",
     "profile": "Profile",
     "scan": "Scan",
-    "map": "Centers"
+    "map": "Centers",
+    "store": "Store"
   },
   "profile": {
     "title": "Profile",
@@ -280,6 +281,47 @@
     "status_approved": "Approved",
     "status_rejected": "Rejected"
   },
+  "provider": {
+    "title": "My Store",
+    "distributorRole": "Distributor",
+    "serviceRole": "Service Provider",
+    "storeOpen": "Store Open",
+    "storeClosed": "Store Closed",
+    "openStore": "Open",
+    "closeStore": "Close",
+    "generateQR": "Generate QR Code",
+    "generateDesc": "Select the product type, enter the amount, and generate a QR code for the customer to scan.",
+    "enterAmount": "Enter amount",
+    "itemDesc": "Item description (English)",
+    "itemDescFa": "Item description (Persian)",
+    "generate": "Generate QR",
+    "selectItem": "Select an item",
+    "noItems": "No items available for this category",
+    "amount": "Amount",
+    "showToCustomer": "Show to Customer",
+    "newQR": "New QR",
+    "done": "Done",
+    "todayStats": "Today's Activity",
+    "transactions": "Transactions",
+    "categories": "Categories",
+    "workSummary": "Work Summary",
+    "daysWorked": "Days Worked",
+    "totalHours": "Total Hours",
+    "totalDistributed": "Total distributed",
+    "storeClosedWarning": "Open your store first to generate QR codes.",
+    "pendingApproval": "Your application is being reviewed. You'll be notified once approved.",
+    "rejected": "Your application has been rejected. Please contact support.",
+    "serviceType_grocery": "Grocery Store",
+    "serviceType_bakery": "Bakery",
+    "serviceType_pharmacy": "Pharmacy",
+    "serviceType_butcher": "Butcher Shop",
+    "serviceType_fuel_station": "Fuel Station",
+    "serviceType_water_station": "Water Distribution",
+    "serviceType_general_goods": "General Goods",
+    "serviceType_distribution_assistant": "Distribution Assistant",
+    "serviceType_medical_provider": "Medical Provider",
+    "serviceType_hygiene_provider": "Hygiene Provider"
+  },
   "common": {
     "loading": "Loading...",
     "error": "Something went wrong",
@@ -295,6 +337,12 @@
     "showAll": "Show all",
     "showLess": "Show less",
     "regionalItems": "Regional Items"
+  },
+  "catalog": {
+    "hygieneBasket": "Hygiene Supplies",
+    "hygieneRegional": "Regional Hygiene Items",
+    "medicalBasket": "Medical Supplies",
+    "medicalRegional": "Regional Medical Items"
   },
   "units": {
     "liters": "L",

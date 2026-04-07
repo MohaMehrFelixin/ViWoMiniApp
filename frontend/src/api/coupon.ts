@@ -22,6 +22,13 @@ import type {
   VerifyIdentityRequest,
   VerifyIdentityResponse,
   NoticesResponse,
+  PowerBankSwapResponse,
+  PowerBankSwapsResponse,
+  CatalogItemsResponse,
+  ItemAllocationsResponse,
+  ProviderProfileResponse,
+  ProviderSessionResponse,
+  ProviderStatsResponse,
 } from "../lib/types";
 
 export async function registerHousehold(
@@ -116,7 +123,6 @@ export async function getCenterDetail(
 }
 
 // Power Bank Swap
-import type { PowerBankSwapResponse, PowerBankSwapsResponse } from "../lib/types";
 
 export async function requestPowerBankSwap(centerID: number): Promise<PowerBankSwapResponse> {
   return api.post("powerbank/swap", { json: { center_id: centerID } }).json<PowerBankSwapResponse>();
@@ -136,6 +142,46 @@ export async function returnPowerBank(swapID: number): Promise<void> {
 
 export async function cancelPowerBankSwap(swapID: number): Promise<void> {
   await api.post(`powerbank/swaps/${swapID}/cancel`);
+}
+
+// --- Catalog Items ---
+
+export async function getCatalogItems(
+  category?: CouponCategory
+): Promise<CatalogItemsResponse> {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  return api
+    .get("catalog/items", { searchParams: params })
+    .json<CatalogItemsResponse>();
+}
+
+export async function getItemAllocations(
+  category?: CouponCategory
+): Promise<ItemAllocationsResponse> {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  return api
+    .get("catalog/allocations", { searchParams: params })
+    .json<ItemAllocationsResponse>();
+}
+
+// --- Provider / Distributor ---
+
+export async function getProviderProfile(): Promise<ProviderProfileResponse> {
+  return api.get("provider/profile").json<ProviderProfileResponse>();
+}
+
+export async function openProviderSession(): Promise<ProviderSessionResponse> {
+  return api.post("provider/session/open").json<ProviderSessionResponse>();
+}
+
+export async function closeProviderSession(): Promise<ProviderSessionResponse> {
+  return api.post("provider/session/close").json<ProviderSessionResponse>();
+}
+
+export async function getProviderStats(): Promise<ProviderStatsResponse> {
+  return api.get("provider/stats").json<ProviderStatsResponse>();
 }
 
 // --- Notices ---

@@ -177,6 +177,176 @@ type QRPayload struct {
 	Nonce       string         `json:"nonce"`
 }
 
+// Provider status constants.
+const (
+	ProviderStatusPending   = "pending"
+	ProviderStatusApproved  = "approved"
+	ProviderStatusRejected  = "rejected"
+	ProviderStatusSuspended = "suspended"
+)
+
+// Provider role constants.
+const (
+	ProviderRoleDistributor    = "distributor"
+	ProviderRoleServiceProvider = "service_provider"
+)
+
+// Admin-defined service types (rows in provider_service_types).
+type ProviderServiceType struct {
+	ID          int64     `json:"id"`
+	Code        string    `json:"code"`
+	Name        string    `json:"name"`
+	NameFa      string    `json:"name_fa"`
+	Description string    `json:"description"`
+	Role        string    `json:"role"`
+	IsActive    bool      `json:"is_active"`
+	SortOrder   int       `json:"sort_order"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// Provider represents a distributor or service provider.
+// The same Telegram user may also have a Household row for their own coupons.
+type Provider struct {
+	ID                  int64            `json:"id"`
+	TelegramUserID      int64            `json:"telegram_user_id"`
+	HouseholdID         *int64           `json:"household_id,omitempty"`
+	Name                string           `json:"name"`
+	NameFa              string           `json:"name_fa"`
+	NationalCode        *string          `json:"national_code,omitempty"`
+	ServiceTypeID       int64            `json:"service_type_id"`
+	StoreAddress        string           `json:"store_address"`
+	StoreAddressFa      string           `json:"store_address_fa"`
+	StoreDescription    string           `json:"store_description"`
+	Lat                 float64          `json:"lat"`
+	Lng                 float64          `json:"lng"`
+	DistributionPointID *int64           `json:"distribution_point_id,omitempty"`
+	AllowedCategories   []CouponCategory `json:"allowed_categories"`
+	Status              string           `json:"status"`
+	ApprovedAt          *time.Time       `json:"approved_at,omitempty"`
+	ApprovedBy          *int64           `json:"approved_by,omitempty"`
+	RejectedReason      *string          `json:"rejected_reason,omitempty"`
+	SuspendedReason     *string          `json:"suspended_reason,omitempty"`
+	CreatedAt           time.Time        `json:"created_at"`
+	UpdatedAt           time.Time        `json:"updated_at"`
+}
+
+// ProviderSession records a work shift (open → close).
+type ProviderSession struct {
+	ID              int64      `json:"id"`
+	ProviderID      int64      `json:"provider_id"`
+	OpenedAt        time.Time  `json:"opened_at"`
+	ClosedAt        *time.Time `json:"closed_at,omitempty"`
+	DurationMinutes int        `json:"duration_minutes"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
+// ProviderTransaction records a single distribution event from the provider's perspective.
+type ProviderTransaction struct {
+	ID                int64          `json:"id"`
+	ProviderID        int64          `json:"provider_id"`
+	RedemptionID      *int64         `json:"redemption_id,omitempty"`
+	HouseholdID       int64          `json:"household_id"`
+	Category          CouponCategory `json:"category"`
+	Amount            string         `json:"amount"`
+	ItemDescription   string         `json:"item_description"`
+	ItemDescriptionFa string         `json:"item_description_fa"`
+	CreatedAt         time.Time      `json:"created_at"`
+}
+
+// Provider aggregate stats.
+type ProviderCategoryStat struct {
+	Category    CouponCategory `json:"category"`
+	Count       int            `json:"count"`
+	TotalAmount string         `json:"total_amount"`
+}
+
+type ProviderDayStats struct {
+	Transactions int                    `json:"transactions"`
+	ByCategory   []ProviderCategoryStat `json:"by_category"`
+}
+
+type ProviderTotalStats struct {
+	Transactions int                    `json:"transactions"`
+	DaysWorked   int                    `json:"days_worked"`
+	TotalHours   float64                `json:"total_hours"`
+	ByCategory   []ProviderCategoryStat `json:"by_category"`
+}
+
+type ProviderStats struct {
+	Today          ProviderDayStats   `json:"today"`
+	Total          ProviderTotalStats `json:"total"`
+	CurrentSession *ProviderSession   `json:"current_session"`
+}
+
+// --- Catalog / Item-level allocation models ---
+
+// CatalogUnit is an admin-defined measurement unit (kg, g, L, pcs, cans, ...).
+type CatalogUnit struct {
+	ID     int64  `json:"id"`
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	NameFa string `json:"name_fa"`
+}
+
+// CatalogItem is an admin-defined product/service within a coupon category.
+type CatalogItem struct {
+	ID            int64          `json:"id"`
+	Category      CouponCategory `json:"category"`
+	UnitID        int64          `json:"unit_id"`
+	Name          string         `json:"name"`
+	NameFa        string         `json:"name_fa"`
+	Icon          string         `json:"icon"`
+	Scope         string         `json:"scope"`           // "national" or "regional"
+	Region        *string        `json:"region,omitempty"` // nil for national
+	DefaultAmount string         `json:"default_amount"`
+	SortOrder     int            `json:"sort_order"`
+	IsActive      bool           `json:"is_active"`
+}
+
+// CatalogItemWithUnit is CatalogItem joined with its unit for API responses.
+type CatalogItemWithUnit struct {
+	CatalogItem
+	Unit CatalogUnit `json:"unit"`
+}
+
+// HouseholdItemAllocation tracks per-item allocation and usage for a household.
+type HouseholdItemAllocation struct {
+	ID              int64     `json:"id"`
+	HouseholdID     int64     `json:"household_id"`
+	CatalogItemID   int64     `json:"catalog_item_id"`
+	CycleStart      time.Time `json:"cycle_start"`
+	CycleEnd        time.Time `json:"cycle_end"`
+	AllocatedAmount string    `json:"allocated_amount"`
+	UsedAmount      string    `json:"used_amount"`
+	Status          string    `json:"status"`
+}
+
+// ItemAllocationView is the frontend-friendly joined view of item + unit + allocation.
+type ItemAllocationView struct {
+	ItemID          int64  `json:"item_id"`
+	Category        string `json:"category"`
+	Name            string `json:"name"`
+	NameFa          string `json:"name_fa"`
+	Icon            string `json:"icon"`
+	Scope           string `json:"scope"`
+	Region          string `json:"region,omitempty"`
+	UnitCode        string `json:"unit_code"`
+	UnitName        string `json:"unit_name"`
+	UnitNameFa      string `json:"unit_name_fa"`
+	AllocatedAmount string `json:"allocated_amount"`
+	UsedAmount      string `json:"used_amount"`
+}
+
+// API response types for catalog endpoints.
+type CatalogItemsResponse struct {
+	Items []CatalogItemWithUnit `json:"items"`
+}
+
+type ItemAllocationsResponse struct {
+	National []ItemAllocationView `json:"national"`
+	Regional []ItemAllocationView `json:"regional"`
+}
+
 // Request DTOs.
 
 type RegisterHouseholdRequest struct {
@@ -318,4 +488,46 @@ type PowerBankSwapResponse struct {
 type PowerBankSwapsResponse struct {
 	Swaps      []PowerBankSwap `json:"swaps"`
 	ActiveSwap *PowerBankSwap  `json:"active_swap,omitempty"`
+}
+
+// --- Provider Request / Response DTOs ---
+
+type RegisterProviderRequest struct {
+	ServiceTypeCode  string  `json:"service_type_code" validate:"required,max=50"`
+	StoreAddress     string  `json:"store_address" validate:"required,max=500"`
+	StoreAddressFa   string  `json:"store_address_fa" validate:"max=500"`
+	StoreDescription string  `json:"store_description" validate:"required,max=1000"`
+	Lat              float64 `json:"lat"`
+	Lng              float64 `json:"lng"`
+}
+
+// ProviderProfileResponse is returned by GET /provider/profile.
+// The frontend uses "type" and "service_type" rather than IDs.
+type ProviderProfileResponse struct {
+	Provider ProviderProfileDTO `json:"provider"`
+}
+
+type ProviderProfileDTO struct {
+	ID                  int64  `json:"id"`
+	Name                string `json:"name"`
+	NameFa              string `json:"name_fa"`
+	Type                string `json:"type"`          // "distributor" or "service_provider"
+	ServiceType         string `json:"service_type"`  // code from provider_service_types
+	Status              string `json:"status"`
+	StoreAddress        string `json:"store_address"`
+	StoreAddressFa      string `json:"store_address_fa"`
+	DistributionPointID int64  `json:"distribution_point_id"`
+	CreatedAt           string `json:"created_at"`
+}
+
+type ProviderSessionResponse struct {
+	Session *ProviderSession `json:"session"`
+}
+
+type ProviderStatsResponse struct {
+	Stats *ProviderStats `json:"stats"`
+}
+
+type ProviderServiceTypesResponse struct {
+	ServiceTypes []ProviderServiceType `json:"service_types"`
 }

@@ -4,15 +4,18 @@ import { useKycStore } from "../store/useKycStore";
 import { useHouseholdStore } from "../store/useHouseholdStore";
 import { useVolunteerStore, VOLUNTEER_SPECIALTIES } from "../store/useVolunteerStore";
 import { useDistributorStore } from "../store/useDistributorStore";
+import { useProductOfferingStore } from "../store/useProductOfferingStore";
+import type { ProductOffering } from "../store/useProductOfferingStore";
 import { registerHousehold, getHousehold, sendOTP, verifyOTP, verifyIdentity } from "../api/coupon";
 import { extractErrorMessage } from "../lib/api-error";
 import type { Household } from "../lib/types";
-import { IconIdCard, IconUser, IconHouse, IconCheck, IconShield } from "../components/Icons";
+import { IconIdCard, IconUser, IconHouse, IconCheck, IconShield, IconPackage } from "../components/Icons";
 import { ShamsiDatePicker } from "../components/ShamsiDatePicker";
 import { getContact, getTelegramUser, disableClosingConfirmation, getLocation } from "../lib/telegram";
+import { toPersianDigits } from "../lib/utils";
 
-const TOTAL_STEPS = 8;
-const ACTIVE_DOT_STEPS = 7; // Steps 1-7 shown as dots (step 0 Welcome has no dots)
+const TOTAL_STEPS = 9;
+const ACTIVE_DOT_STEPS = 8; // Steps 1-8 shown as dots (step 0 Welcome has no dots)
 
 // --- Step Indicator ---
 function StepDots({ current, total }: { current: number; total: number }) {
@@ -738,7 +741,195 @@ function StepVolunteer({
   );
 }
 
-// --- Step 7: Distributor + Submit (was Step 5) ---
+// --- Step 7: Product Offering ---
+const COMMON_UNITS = ["kg", "g", "L", "pcs", "cans", "bottles", "packets"] as const;
+
+function StepProductOffering({
+  onNext,
+  onBack,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const isFa = i18n.language === "fa";
+  const { setOfferings } = useProductOfferingStore();
+  const [wants, setWants] = useState<boolean | null>(null);
+  const [items, setItems] = useState<ProductOffering[]>([
+    { productName: "", productNameFa: "", quantity: "", unit: "kg", description: "" },
+  ]);
+
+  const addItem = () => {
+    setItems([...items, { productName: "", productNameFa: "", quantity: "", unit: "kg", description: "" }]);
+  };
+
+  const updateItem = (index: number, field: keyof ProductOffering, value: string) => {
+    setItems(items.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  };
+
+  const removeItem = (index: number) => {
+    if (items.length <= 1) return;
+    setItems(items.filter((_, i) => i !== index));
+  };
+
+  const normalizeQty = (raw: string) =>
+    raw
+      .replace(/[\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) - 0x06f0))
+      .replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660))
+      .replace(/[^\d.]/g, "");
+
+  const hasValidItems = items.some(
+    (item) =>
+      (item.productName.trim() || item.productNameFa.trim()) &&
+      Number(normalizeQty(item.quantity)) > 0
+  );
+
+  const handleNext = () => {
+    if (wants) {
+      const valid = items.filter(
+        (item) => (item.productName.trim() || item.productNameFa.trim()) && Number(normalizeQty(item.quantity)) > 0
+      );
+      setOfferings(true, valid);
+    } else {
+      setOfferings(false, []);
+    }
+    onNext();
+  };
+
+  return (
+    <div className="glass glass-animate space-y-5 p-6">
+      <div className="text-center">
+        <div className="text-secondary"><IconPackage size={40} /></div>
+        <h2 className="text-primary mt-3 text-xl font-bold">
+          {t("offering.title")}
+        </h2>
+        <p className="text-secondary mt-1 text-sm">
+          {t("offering.description")}
+        </p>
+      </div>
+
+      {/* Incentive banner */}
+      <div
+        className="glass-subtle space-y-2 rounded-2xl p-4"
+        style={{ borderColor: "rgba(34,197,94,0.3)", background: "rgba(34,197,94,0.06)" }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-lg">💰</span>
+          <p className="text-primary text-sm font-semibold">{t("offering.incentiveTitle")}</p>
+        </div>
+        <p className="text-secondary text-xs leading-relaxed">{t("offering.incentiveDesc")}</p>
+        <div className="mt-1 space-y-1.5">
+          <div className="flex items-start gap-2">
+            <span style={{ color: "rgb(34,197,94)" }}>✓</span>
+            <p className="text-secondary text-xs">{t("offering.incentive1")}</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <span style={{ color: "rgb(34,197,94)" }}>✓</span>
+            <p className="text-secondary text-xs">{t("offering.incentive2")}</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <span style={{ color: "rgb(34,197,94)" }}>✓</span>
+            <p className="text-secondary text-xs">{t("offering.incentive3")}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => setWants(true)}
+          className={`glass-btn flex-1 ${wants === true ? "glass-btn-primary" : ""}`}
+        >
+          {t("offering.yes")}
+        </button>
+        <button
+          onClick={() => setWants(false)}
+          className={`glass-btn flex-1 ${wants === false ? "glass-btn-primary" : ""}`}
+        >
+          {t("offering.no")}
+        </button>
+      </div>
+
+      {wants === true && (
+        <div className="space-y-4">
+          <p className="text-secondary text-sm font-medium">{t("offering.whatProduct")}</p>
+
+          {items.map((item, idx) => (
+            <div key={idx} className="glass-subtle space-y-2 rounded-2xl p-4">
+              {items.length > 1 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-tertiary text-xs font-medium">
+                    {t("offering.item")} {isFa ? toPersianDigits(String(idx + 1)) : idx + 1}
+                  </span>
+                  <button
+                    onClick={() => removeItem(idx)}
+                    className="text-xs"
+                    style={{ color: "rgb(239,68,68)" }}
+                  >
+                    {t("offering.remove")}
+                  </button>
+                </div>
+              )}
+
+              <input
+                className="glass-input"
+                placeholder={t("offering.productName")}
+                value={isFa ? item.productNameFa : item.productName}
+                onChange={(e) => updateItem(idx, isFa ? "productNameFa" : "productName", e.target.value)}
+              />
+
+              <div className="flex gap-2">
+                <input
+                  className="glass-input flex-1 font-mono"
+                  placeholder={t("offering.quantity")}
+                  value={item.quantity}
+                  onChange={(e) => updateItem(idx, "quantity", e.target.value)}
+                  inputMode="decimal"
+                  dir="ltr"
+                />
+                <select
+                  className="glass-input w-24"
+                  value={item.unit}
+                  onChange={(e) => updateItem(idx, "unit", e.target.value)}
+                >
+                  {COMMON_UNITS.map((u) => (
+                    <option key={u} value={u}>{t(`offering.unit_${u}`)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ))}
+
+          <button
+            className="glass-btn glass-btn-sm w-full"
+            onClick={addItem}
+            style={{ borderStyle: "dashed" }}
+          >
+            + {t("offering.addAnother")}
+          </button>
+        </div>
+      )}
+
+      {wants === false && (
+        <div className="glass-subtle rounded-xl p-3">
+          <p className="text-secondary text-sm">{t("offering.skipNote")}</p>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button className="glass-btn flex-1" onClick={onBack}>{t("common.back")}</button>
+        <button
+          className="glass-btn glass-btn-primary flex-1"
+          onClick={handleNext}
+          disabled={wants === null || (wants === true && !hasValidItems)}
+        >
+          {t("kyc.next")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Step 8: Distributor + Submit ---
 function StepDistributorAndSubmit({
   onBack,
   onRegistered,
@@ -1236,6 +1427,13 @@ export function KycFlow() {
           />
         );
       case 7:
+        return (
+          <StepProductOffering
+            onNext={goNext}
+            onBack={goBack}
+          />
+        );
+      case 8:
         return (
           <StepDistributorAndSubmit
             onBack={goBack}

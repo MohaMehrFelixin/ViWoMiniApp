@@ -347,6 +347,53 @@ type ItemAllocationsResponse struct {
 	Regional []ItemAllocationView `json:"regional"`
 }
 
+// --- Product Offering models ---
+
+// ProductOfferingStatus constants.
+const (
+	OfferingStatusPending    = "pending"
+	OfferingStatusReviewing  = "reviewing"
+	OfferingStatusContacted  = "contacted"
+	OfferingStatusAccepted   = "accepted"
+	OfferingStatusRejected   = "rejected"
+	OfferingStatusCollected  = "collected"
+)
+
+// ProductOffering is a citizen's offer to contribute products to crisis relief.
+type ProductOffering struct {
+	ID             int64      `json:"id"`
+	HouseholdID    int64      `json:"household_id"`
+	TelegramUserID int64      `json:"telegram_user_id"`
+	ProductName    string     `json:"product_name"`
+	ProductNameFa  string     `json:"product_name_fa"`
+	Quantity       string     `json:"quantity"`
+	Unit           string     `json:"unit"`
+	Description    string     `json:"description"`
+	Status         string     `json:"status"`
+	AdminNotes     string     `json:"admin_notes,omitempty"`
+	ReviewedBy     *int64     `json:"reviewed_by,omitempty"`
+	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
+	ContactedAt    *time.Time `json:"contacted_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+type SubmitProductOfferingsRequest struct {
+	Offerings []ProductOfferingItem `json:"offerings" validate:"required,min=1,max=20"`
+}
+
+type ProductOfferingItem struct {
+	ProductName   string `json:"product_name" validate:"required,max=200"`
+	ProductNameFa string `json:"product_name_fa" validate:"max=200"`
+	Quantity      string `json:"quantity" validate:"required"`
+	Unit          string `json:"unit" validate:"required,max=20"`
+	Description   string `json:"description" validate:"max=500"`
+}
+
+type ProductOfferingsResponse struct {
+	Offerings []ProductOffering `json:"offerings"`
+}
+
 // Request DTOs.
 
 type RegisterHouseholdRequest struct {

@@ -7,6 +7,7 @@ import { useVolunteerStore, VOLUNTEER_SPECIALTIES } from "../store/useVolunteerS
 import { useDistributorStore } from "../store/useDistributorStore";
 import { useKycStore } from "../store/useKycStore";
 import { useProviderStore } from "../store/useProviderStore";
+import { useProductOfferingStore } from "../store/useProductOfferingStore";
 import { HouseholdTab } from "./HouseholdPage";
 import { IconUser, IconFamily, IconHistory, IconShield } from "../components/Icons";
 import { RedemptionItem } from "../components/RedemptionItem";
@@ -350,6 +351,7 @@ function LogoutButton() {
   const clearVolunteer = useVolunteerStore((s) => s.clear);
   const clearDistributor = useDistributorStore((s) => s.clear);
   const clearProvider = useProviderStore((s) => s.clear);
+  const clearOfferings = useProductOfferingStore((s) => s.clear);
   const resetKyc = useKycStore((s) => s.reset);
   const [confirming, setConfirming] = useState(false);
 
@@ -361,6 +363,7 @@ function LogoutButton() {
     clearVolunteer();   // clear localStorage-only data
     clearDistributor(); // clear localStorage-only data
     clearProvider();    // clear provider profile/stats
+    clearOfferings();   // clear product offerings
     resetKyc();         // sets completed=false → shows KYC login flow
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("warning");
   };

@@ -445,6 +445,34 @@ type TicketsResponse struct {
 	Tickets []SupportTicket `json:"tickets"`
 }
 
+// --- Volunteer Registration ---
+
+type RegisterVolunteerRequest struct {
+	Specialty string `json:"specialty" validate:"max=100"`
+}
+
+type VolunteerStatusResponse struct {
+	IsVolunteer bool   `json:"is_volunteer"`
+	Specialty   string `json:"specialty,omitempty"`
+	Status      string `json:"status"`
+}
+
+// --- Provider Registration ---
+
+type RegisterProviderApplicationRequest struct {
+	ServiceTypeCode  string  `json:"service_type_code" validate:"required,max=50"`
+	StoreAddress     string  `json:"store_address" validate:"required,max=500"`
+	StoreDescription string  `json:"store_description" validate:"required,max=1000"`
+	Lat              float64 `json:"lat"`
+	Lng              float64 `json:"lng"`
+}
+
+type ProviderStatusResponse struct {
+	IsProvider  bool   `json:"is_provider"`
+	Status      string `json:"status"`
+	ServiceType string `json:"service_type,omitempty"`
+}
+
 // Request DTOs.
 
 type RegisterHouseholdRequest struct {

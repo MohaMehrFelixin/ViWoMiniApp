@@ -17,6 +17,10 @@ import (
 
 	"github.com/viwo-app/mini-coupon/internal/config"
 	"github.com/viwo-app/mini-coupon/internal/database"
+	adminHandler "github.com/viwo-app/mini-coupon/internal/admin/handler"
+	adminMW "github.com/viwo-app/mini-coupon/internal/admin/middleware"
+	adminRepo "github.com/viwo-app/mini-coupon/internal/admin/repository"
+	adminService "github.com/viwo-app/mini-coupon/internal/admin/service"
 	couponHandler "github.com/viwo-app/mini-coupon/internal/coupon/handler"
 	"github.com/viwo-app/mini-coupon/internal/coupon/repository"
 	"github.com/viwo-app/mini-coupon/internal/coupon/service"
@@ -89,7 +93,21 @@ func main() {
 	kycSvc := service.NewKYCService(fnClient, rdb, logger, cfg.Finnotech.Enabled)
 
 	handler := couponHandler.NewCouponHandler(householdSvc, allocationSvc, redemptionSvc, distributionSvc, powerBankSvc, kycSvc, rdb, logger)
+	regHandler := couponHandler.NewRegistrationHandler(pgPool, idGen, logger)
 	tgAuth := middleware.TelegramAuth(cfg.TelegramBotToken)
+
+	// Admin panel infrastructure.
+	adminUserRepo := adminRepo.NewPostgresAdminRepo(pgPool)
+	auditLogRepo := adminRepo.NewPostgresAuditRepo(pgPool, idGen)
+	entityRepo := adminRepo.NewEntityRepository(pgPool)
+	adminSvc := adminService.NewAdminService(adminUserRepo, auditLogRepo, rdb, idGen, logger)
+	entitySvc := adminService.NewEntityService(entityRepo, auditLogRepo, pgPool, logger)
+	adminH := adminHandler.NewAdminHandler(adminSvc, logger)
+	entityH := adminHandler.NewEntityHandler(entitySvc, logger)
+	analyticsH := adminHandler.NewAnalyticsHandler(entityRepo, logger)
+	settingsH := adminHandler.NewSettingsHandler(entityRepo, auditLogRepo, rdb, logger)
+	sessionAuth := adminMW.SessionAuth(rdb, logger)
+	logger.Info("admin panel initialized")
 
 	r := chi.NewRouter()
 	r.Use(middleware.CORS())
@@ -99,7 +117,15 @@ func main() {
 	r.Get("/health", healthCheck(pgPool, rdb))
 
 	r.Route("/api/v1/coupon", func(r chi.Router) {
-		couponHandler.RegisterRoutes(r, handler, tgAuth, rdb)
+		couponHandler.RegisterRoutes(r, handler, regHandler, tgAuth, rdb)
+	})
+
+	// Admin API — separate auth (server-side sessions, not Telegram initData).
+	getAdminStatus := func(ctx context.Context, adminID int64) (string, error) {
+		return adminSvc.GetAdminStatus(ctx, adminID)
+	}
+	r.Route("/api/v1/admin", func(r chi.Router) {
+		adminHandler.RegisterAdminRoutes(r, adminH, entityH, analyticsH, settingsH, sessionAuth, getAdminStatus, rdb)
 	})
 
 	srv := &http.Server{
